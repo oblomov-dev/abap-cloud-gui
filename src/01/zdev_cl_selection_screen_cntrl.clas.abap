@@ -1,0 +1,14 @@
+CLASS zdev_cl_selection_screen_cntrl DEFINITION
+  PUBLIC
+  FINAL
+  CREATE PUBLIC .
+
+  PUBLIC SECTION.
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+ENDCLASS.
+
+
+
+CLASS zdev_cl_selection_screen_cntrl IMPLEMENTATION.
+ENDCLASS.
