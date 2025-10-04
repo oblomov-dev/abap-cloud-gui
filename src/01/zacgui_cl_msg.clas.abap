@@ -1,32 +1,13 @@
-CLASS zacgui_cl_msg DEFINITION
-  PUBLIC
-  FINAL
-  CREATE PUBLIC .
+class ZACGUI_CL_MSG definition
+  public
+  create private .
 
-  PUBLIC SECTION.
-
-    methods e
-        importing
-        val type string.
-    methods w.
-    methods s.
-  PROTECTED SECTION.
-  PRIVATE SECTION.
+public section.
+protected section.
+private section.
 ENDCLASS.
 
 
 
-CLASS zacgui_cl_msg IMPLEMENTATION.
-  METHOD e.
-
-  ENDMETHOD.
-
-  METHOD s.
-
-  ENDMETHOD.
-
-  METHOD w.
-
-  ENDMETHOD.
-
+CLASS ZACGUI_CL_MSG IMPLEMENTATION.
 ENDCLASS.

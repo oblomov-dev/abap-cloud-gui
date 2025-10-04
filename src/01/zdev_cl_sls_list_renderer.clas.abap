@@ -1,34 +1,13 @@
-CLASS zdev_cl_sls_list_renderer DEFINITION
-  PUBLIC
-  FINAL
-  CREATE PUBLIC .
+class ZDEV_CL_SLS_LIST_RENDERER definition
+  public
+  create private .
 
-  PUBLIC SECTION.
-
-    METHODS write
-      IMPORTING
-        val TYPE clike.
-    METHODS new_line.
-    METHODS new_page.
-
-  PROTECTED SECTION.
-  PRIVATE SECTION.
+public section.
+protected section.
+private section.
 ENDCLASS.
 
 
 
-CLASS zdev_cl_sls_list_renderer IMPLEMENTATION.
-
-  METHOD new_line.
-
-  ENDMETHOD.
-
-  METHOD new_page.
-
-  ENDMETHOD.
-
-  METHOD write.
-
-  ENDMETHOD.
-
+CLASS ZDEV_CL_SLS_LIST_RENDERER IMPLEMENTATION.
 ENDCLASS.

@@ -4,6 +4,8 @@
   <asx:values>
    <DEVC>
     <CTEXT>a2UI5-cloud-gui</CTEXT>
+    <LANGUAGE>E</LANGUAGE>
+    <MASTERLANG>E</MASTERLANG>
    </DEVC>
   </asx:values>
  </asx:abap>

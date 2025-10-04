@@ -3,13 +3,13 @@
  <asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">
   <asx:values>
    <VSEOCLASS>
-    <CLSNAME>ZDEV_CL_SELSCREEN_APP_DEMO</CLSNAME>
+    <CLSNAME>Z2UI5_CL_GUI_SAMPLE_02</CLSNAME>
     <LANGU>E</LANGU>
-    <DESCRIPT>selection screen demo</DESCRIPT>
+    <DESCRIPT>test</DESCRIPT>
     <STATE>1</STATE>
     <CLSCCINCL>X</CLSCCINCL>
     <FIXPT>X</FIXPT>
-    <UNICODE>5</UNICODE>
+    <UNICODE>X</UNICODE>
    </VSEOCLASS>
   </asx:values>
  </asx:abap>

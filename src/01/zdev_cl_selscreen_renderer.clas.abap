@@ -1,31 +1,13 @@
-CLASS zdev_cl_selscreen_renderer DEFINITION
-  PUBLIC
-  FINAL
-  CREATE PUBLIC .
+class ZDEV_CL_SELSCREEN_RENDERER definition
+  public
+  create private .
 
-  PUBLIC SECTION.
-
-    METHODS begin_of_screen
-      IMPORTING
-          number TYPE string DEFAULT '1000'.
-
-    methods parameter
-        importing
-            val type any.
-  PROTECTED SECTION.
-  PRIVATE SECTION.
+public section.
+protected section.
+private section.
 ENDCLASS.
 
 
 
-CLASS zdev_cl_selscreen_renderer IMPLEMENTATION.
-
-  METHOD begin_of_screen.
-
-  ENDMETHOD.
-
-  METHOD parameter.
-
-  ENDMETHOD.
-
+CLASS ZDEV_CL_SELSCREEN_RENDERER IMPLEMENTATION.
 ENDCLASS.
