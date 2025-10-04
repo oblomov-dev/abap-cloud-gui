@@ -16,19 +16,14 @@ CLASS z2ui5_cl_gui_sample_01 IMPLEMENTATION.
 
   METHOD z2ui5_if_app~main.
 
-    IF client->check_on_init( ).
 
-      DATA(lo_screen) = NEW z2ui5_cl_gui_selscreen( ).
-      lo_screen->screen_begin(
-        )->checkbox( val = '234'
-        )->parameter( ).
+    DATA(lo_screen) = NEW z2ui5_cl_gui_selscreen( ).
 
-    ELSEIF client->get( )-event = 'ABC'.
+    lo_screen->screen_begin(
+      )->checkbox( val = '234'
+      )->parameter( ).
 
-      DATA(lo_list) = NEW z2ui5_cl_gui_list( ).
-      lo_list->write( `this is a list opoutput` ).
-
-    ENDIF.
+    client->view_display( lo_screen->stringify( ) ).
 
   ENDMETHOD.
 

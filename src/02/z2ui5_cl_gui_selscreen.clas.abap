@@ -28,6 +28,13 @@ CLASS z2ui5_cl_gui_selscreen DEFINITION PUBLIC.
       RETURNING VALUE(result) TYPE REF TO z2ui5_cl_gui_selscreen.
     METHODS select_option
       RETURNING VALUE(result) TYPE REF TO z2ui5_cl_gui_selscreen.
+
+    METHODS stringify
+      RETURNING
+        value(result) TYPE string.
+
+          PROTECTED SECTION.
+  PRIVATE SECTION.
 ENDCLASS.
 
 CLASS z2ui5_cl_gui_selscreen IMPLEMENTATION.
@@ -96,4 +103,9 @@ CLASS z2ui5_cl_gui_selscreen IMPLEMENTATION.
 
 
   ENDMETHOD.
+
+  METHOD stringify.
+
+  ENDMETHOD.
+
 ENDCLASS.

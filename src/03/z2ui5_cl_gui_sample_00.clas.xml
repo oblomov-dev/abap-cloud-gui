@@ -3,9 +3,9 @@
  <asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">
   <asx:values>
    <VSEOCLASS>
-    <CLSNAME>Z2UI5_CL_GUI_SAMPLE_01</CLSNAME>
+    <CLSNAME>Z2UI5_CL_GUI_SAMPLE_00</CLSNAME>
     <LANGU>E</LANGU>
-    <DESCRIPT>selection screen</DESCRIPT>
+    <DESCRIPT>report</DESCRIPT>
     <STATE>1</STATE>
     <CLSCCINCL>X</CLSCCINCL>
     <FIXPT>X</FIXPT>
