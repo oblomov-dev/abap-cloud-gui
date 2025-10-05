@@ -2,12 +2,13 @@
 
 Quickly create abap2UI5 apps with selection screens, lists, ALVs, and other ABAP report-like features. All objects are developed to reach pragmatic solutions with a bit of nostalgic flavor.
 
+*Bringing the best of classic ABAP to modern UI5 applications* 🎯
+
 ### Features
 - **Selection Screens** - Build interactive parameter screens
 - **ALV & List Output** - Display data in familiar ABAP formats
 - **Report-Style Development** - Develop complete apps with classic ABAP report behavior
 
-*Bringing the best of classic ABAP to modern UI5 applications* 🎯
 
 ### Sample 01
 
