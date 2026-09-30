@@ -1,10 +1,48 @@
 # abap-cloud-gui
 
-SAP GUI style programming for [abap2UI5](https://github.com/abap2UI5/abap2UI5):
-selection screens, `WRITE` lists, ALV grids and the classic report events —
-on ABAP Cloud and on NetWeaver down to 7.02.
+**Write abap2UI5 apps the way you write a classic ABAP report.** Selection
+screen, `WRITE` list, ALV grid, `START-OF-SELECTION`, `AT LINE-SELECTION`,
+`MESSAGE` — the same concepts, running as a UI5 app in the browser. On ABAP
+Cloud as well as on NetWeaver down to 7.02.
 
-*Bringing the best of classic ABAP to modern UI5 applications* 🎯
+## Why?
+
+ABAP Cloud has no SAP GUI: no selection screens, no `WRITE` lists, no
+`CL_SALV_TABLE`. A quick report that took ten minutes on premise suddenly
+needs RAP, CDS and a Fiori app. And writing UI5 views by hand means learning
+a new UI model first.
+
+abap-cloud-gui closes that gap. You write a class that looks and reads like a
+report — parameters, event blocks, `write( )` — and get a UI5 app with a
+selection screen, a result list or ALV grid, drilldown, value helps and
+messages. No UI5 knowledge, no CDS, no RAP needed.
+
+Good for:
+
+- **ABAP developers on ABAP Cloud** who need a quick report or tool.
+- **Moving reports to ABAP Cloud** — the event blocks and output statements
+  map to methods with matching names, so a report keeps its structure.
+- **Starting with abap2UI5** in familiar terms before building views yourself.
+
+## What it is not
+
+- **Not a way to run existing reports unchanged.** A report is rewritten as a
+  class: event blocks become methods, `PARAMETERS` become attributes, `WRITE`
+  becomes `write( )`. The structure stays, the syntax changes.
+- **Not a SAP GUI clone.** It uses the classic *programming model*, the screens
+  look like modern UI5. If you are looking for SE80, SE16N or SM37 in the
+  browser, that is [abap2UI5-addons/sapgui](https://github.com/abap2UI5-addons/sapgui).
+
+## Quick start
+
+Install with [abapGit](https://abapgit.org), in this order:
+
+1. [abap2UI5](https://github.com/abap2UI5/abap2UI5)
+2. [abap2UI5-addons/popups](https://github.com/abap2UI5-addons/popups) — the
+   value helps and confirmation popups
+3. this repository
+
+Then write your first report:
 
 ```abap
 CLASS zcl_hello DEFINITION PUBLIC INHERITING FROM z2ui5_cl_cgui_report FINAL CREATE PUBLIC.
@@ -34,17 +72,9 @@ ENDCLASS.
 ```
 
 Start it like any abap2UI5 app (`?app_start=zcl_hello`): the selection screen
-comes up, **Execute** runs the report, **Back** returns to the selection
-screen.
-
-## Installation
-
-Install with [abapGit](https://abapgit.org), in this order:
-
-1. [abap2UI5](https://github.com/abap2UI5/abap2UI5)
-2. [abap2UI5-addons/popups](https://github.com/abap2UI5-addons/popups) — the
-   value helps and confirmation popups
-3. this repository
+comes up, **Execute** runs the report and shows the list, **Back** returns to
+the selection screen. For more, run the samples below — `z2ui5_cl_cgui_sample_05`
+is a complete report.
 
 ## What is there
 
