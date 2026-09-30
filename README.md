@@ -151,28 +151,71 @@ Known limitations:
       Execute / Back
 - [x] Phase 2 — selection screen: parameters by type, checkbox, radio button
       groups, blocks, lines, comments, push buttons, select-options with the
-      range popup, `OBLIGATORY`, F4 through `at_value_request`
+      range popup, `OBLIGATORY`, F4 through `at_value_request`; fields are
+      found by reference, `select_option( )` needs no name
 - [x] Phase 3 — output: ALV grid (RTTI/DDIC columns, sort, filter, row click),
       `WRITE` list (colors, icons, checkboxes, pages, hotspots, `HIDE`)
 - [x] Phase 4 — messages with classic semantics, `POPUP_TO_CONFIRM`
 
 **Next**
 
-- [ ] Selection screen: automatic F4 from domain fixed values and check tables,
-      `AT SELECTION-SCREEN OUTPUT` / `LOOP AT SCREEN` (hide, read-only per
-      field), `AT SELECTION-SCREEN ON field` with the value state on the field,
-      `NO-DISPLAY`, `MEMORY ID`, selection variants
+Selection screen
+
+- [ ] `AT SELECTION-SCREEN OUTPUT` / `LOOP AT SCREEN` with `MODIFY SCREEN`
+      (hide, read-only, required per field) and an update of the screen
+- [ ] Value helps: automatic F4 from domain fixed values, check tables and
+      CDS value helps, shown in a popup; F4 inside the range popup of a
+      select-option
+- [ ] `AT SELECTION-SCREEN ON field` with the value state on the field
+- [ ] `NO-DISPLAY`, `MEMORY ID`
+- [ ] Selection variants: save, load, start a report with a variant
+- [ ] Selection screen painter: build a selection screen visually and
+      generate the `selection_screen( )` method
+
+Messages and logging
+
+- [ ] Message popover: all messages of a run in one place, warnings in
+      yellow, each message linked to its input field
+- [ ] Short API in the style of abap2UI5: `_msg( )->e( )`, `_msg_box( )->e( )`
+- [ ] Application log (BAL) and [ABAP Logger](https://github.com/ABAP-Logger/ABAP-Logger)
+      as a source for the message popover and a log popup; the internal
+      message table is replaced by the log
+
+Dialogs and screens
+
+- [ ] Popups: `_popup( )->decide` (`POPUP_TO_DECIDE`), `POPUP_GET_VALUES`,
+      transport request selection (from [abap2UI5-addons/popups](https://github.com/abap2UI5-addons/popups))
+- [ ] `CALL SCREEN` and back, also of a screen in another class
+- [ ] `CALL SELECTION-SCREEN` of another report, as a popup or by screen number
+
+Navigation and transactions
+
+- [ ] Command field instead of a plain input: transaction codes, `/n`, `/o`
+- [ ] Command palette (`Cmd+K` / `Ctrl+K`) to search and start reports
+- [ ] Input history: the last entries of a field, opened with the space bar
+- [ ] Keyboard shortcuts: F8 Execute, F3 Back, `AT PFnn`
+- [ ] Transaction logic: start with a variant, prefill the last entries,
+      create a draft
+- [ ] `SET` / `GET PARAMETER ID` with user parameters (like SU3), system
+      parameters and customizing parameters
+
+Output
+
 - [ ] ALV: user-formatted dates, times and amounts, totals and subtotals,
       hotspot per column, toolbar with own functions, Excel export, layout
       variants, editable cells
 - [ ] List: `WRITE AT` positions and `UNDER`, monospace columns,
-      `TOP-OF-PAGE`, secondary lists (`sy-lsind`), `AT PFnn` / keyboard
-      shortcuts (F3, F8)
-- [ ] Dialogs: `POPUP_GET_VALUES`, application log / message popup
-- [ ] Quality: tests for the selection screen and the ALV with a client test
-      double, samples in the abap2UI5 playground, documentation page
-- [ ] Later: background execution (application jobs on ABAP Cloud), print /
-      PDF, tree lists
+      `TOP-OF-PAGE`, secondary lists (`sy-lsind`)
+
+Quality
+
+- [ ] Tests for the selection screen and the ALV with a client test double,
+      samples in the abap2UI5 playground, documentation page
+
+Later
+
+- [ ] Background execution (application jobs on ABAP Cloud), print / PDF,
+      tree lists
 
 ## Development
 
