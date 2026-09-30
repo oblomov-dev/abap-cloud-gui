@@ -13,7 +13,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/oblomov-dev/abap-cloud-gui.git"
+    "url": "git+https://github.com/abap2UI5-addons/abap-cloud-gui.git"
   },
   "license": "MIT",
   "devDependencies": {
