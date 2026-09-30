@@ -3,9 +3,10 @@
  <asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">
   <asx:values>
    <VSEOCLASS>
-    <CLSNAME>Z2UI5_CL_GUI_SAMPLE_01</CLSNAME>
+    <CLSNAME>Z2UI5_CX_CGUI_ERROR</CLSNAME>
     <LANGU>E</LANGU>
-    <DESCRIPT>selection screen</DESCRIPT>
+    <DESCRIPT>cloud gui - error</DESCRIPT>
+    <CATEGORY>40</CATEGORY>
     <STATE>1</STATE>
     <CLSCCINCL>X</CLSCCINCL>
     <FIXPT>X</FIXPT>

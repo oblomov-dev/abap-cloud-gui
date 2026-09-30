@@ -1,0 +1,50 @@
+{
+  // 7.02 gate - used by .github/scripts/check-702.sh on a scratch copy in
+  // build/702, never on src/ itself: `abaplint --fix` downports the copy,
+  // then this config checks it with the v702 syntax. The popups addon has no
+  // 702 branch, so its main branch is cloned into the copy and downported
+  // with it; abap2UI5 and layout-management publish a 702 branch. Only the
+  // popups themselves and their context (src, src/00) are taken - the
+  // addon's samples and its on-premise search helps are not used here.
+  "global": {
+    "files": ["/src/**/*.*", "/popups/src/*.*", "/popups/src/00/*.*"]
+  },
+  "dependencies": [
+    {
+      "url": "https://github.com/open-abap/open-abap-core",
+      "folder": "/deps",
+      "files": "/src/**/*.*"
+    },
+    {
+      "url": "https://github.com/abap2UI5/abap2UI5",
+      "branch": "702",
+      "folder": "/abap2UI5",
+      "files": "/src/**/*.*"
+    },
+    {
+      "url": "https://github.com/abap2UI5-addons/layout-management",
+      "branch": "702",
+      "folder": "/layout-management",
+      "files": "/src/**/*.*"
+    }
+  ],
+  "syntax": {
+    "version": "v702",
+    "errorNamespace": "."
+  },
+  "rules": {
+    "downport": true,
+    "begin_end_names": true,
+    "check_ddic": true,
+    "check_include": true,
+    "check_syntax": true,
+    "global_class": true,
+    "definitions_top": true,
+    "implement_methods": true,
+    "method_implemented_twice": true,
+    "parser_error": true,
+    "superclass_final": true,
+    "unknown_types": true,
+    "xml_consistency": true
+  }
+}
