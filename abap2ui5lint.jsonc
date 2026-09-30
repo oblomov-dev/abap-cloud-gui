@@ -1,0 +1,34 @@
+{
+  // abap2UI5-linter - checks the app classes and the views their builder
+  // chains produce, without an SAP system. https://github.com/abap2UI5/linter
+  "$schema": "./node_modules/@abap2ui5/linter/data/abap2ui5lint.schema.json",
+
+  "paths": ["src"],
+
+  // the oldest UI5 release abap2UI5 promises to run on
+  "ui5": "1.71",
+  "distribution": "sapui5",
+
+  "render": true,
+
+  "rules": {
+    // The components in src/01 are no apps: stringify( ) hands the view to
+    // the app that calls it, which displays it - the samples in src/02 do.
+    "view-never-displayed": {
+      "exclude": [
+        "z2ui5_cl_cgui_selscreen\\.",
+        "z2ui5_cl_cgui_list\\.",
+        "z2ui5_cl_cgui_alv\\."
+      ]
+    },
+    // The list builds its lines in a LOOP over what was written, so there is
+    // no view to reconstruct statically - it renders at runtime only.
+    "render-error": {
+      "exclude": [
+        "z2ui5_cl_cgui_list\\."
+      ]
+    }
+  },
+
+  "failOn": "warning"
+}

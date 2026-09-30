@@ -1,0 +1,36 @@
+name: unit
+
+# The ABAP Unit tests, run in the transpiled abap2UI5 backend - no SAP system.
+# The popups the report runtime calls are not part of this repository, so the
+# ones it uses are cloned beside it and deployed with it.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: unit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - run: git clone --depth 1 https://github.com/abap2UI5-addons/popups .deps/popups
+    - uses: abap2UI5/mcp-server@v0.3.0
+      with:
+        paths: >-
+          src
+          .deps/popups/src/00
+          .deps/popups/src/z2ui5_cl_popup_get_range.clas.abap
+          .deps/popups/src/z2ui5_cl_popup_to_confirm.clas.abap
+          .deps/popups/src/z2ui5_cl_popup_to_select.clas.abap

@@ -1,37 +1,71 @@
 {
-    "global": {
+  // The inner loop: the sources as written - v750 syntax, which the
+  // downport rule keeps downportable to 7.02. The two release gates run
+  // from .github/abaplint: abap_cloud.jsonc (ABAP Cloud, released APIs only)
+  // and abap_702.jsonc (the downported copy, see .github/scripts/check-702.sh).
+  "global": {
+    "files": "/src/**/*.*"
+  },
+  "dependencies": [
+    {
+      "url": "https://github.com/abapedia/steampunk-2305-api-intersect-702",
+      "folder": "/deps",
       "files": "/src/**/*.*"
     },
-    "dependencies": [
-      {
-        "url": "https://github.com/abapedia/steampunk-2305-api-intersect-702",
-        "folder": "/deps",
-        "files": "/src/**/*.*"
-      },
-      {
-        "url": "https://github.com/abap2UI5/abap2UI5",
-        "folder": "/abap2UI5",
-        "files": "/src/**/*.*"
-      }
-    ],
-    "syntax": {
-      "version": "Cloud",
-      "errorNamespace": "."
+    {
+      "url": "https://github.com/abap2UI5/abap2UI5",
+      "folder": "/abap2UI5",
+      "files": "/src/**/*.*"
     },
-    "rules": {
-      "downport": true,
-      "begin_end_names": true,
-      "check_ddic": true,
-      "check_include": true,
-      "check_syntax": true,
-      "global_class": true,
-      "definitions_top": false,
-      "implement_methods": true,
-      "method_implemented_twice": true,
-      "parser_error": true,
-      "superclass_final": true,
-      "unknown_types": true,
-      "xml_consistency": true
+    {
+      "url": "https://github.com/abap2UI5-addons/popups",
+      "folder": "/popups",
+      "files": "/src/**/*.*"
+    },
+    {
+      "url": "https://github.com/abap2UI5-addons/layout-management",
+      "folder": "/layout-management",
+      "files": "/src/**/*.*"
+    }
+  ],
+  "syntax": {
+    "version": "v750",
+    "errorNamespace": "."
+  },
+  "rules": {
+    "downport": true,
+    "begin_end_names": true,
+    "check_ddic": true,
+    "check_include": true,
+    "check_syntax": true,
+    "global_class": true,
+    "definitions_top": false,
+    "implement_methods": true,
+    "method_implemented_twice": true,
+    "parser_error": true,
+    "superclass_final": true,
+    "unknown_types": true,
+    "xml_consistency": true,
+    "exporting": true,
+    "omit_parameter_name": true,
+    "prefix_is_current_class": true,
+    "unused_variables": true,
+    "unused_types": true,
+    "unused_methods": true,
+    "use_new": true,
+    "prefer_xsdbool": true,
+    "line_length": {
+      "length": 255
+    },
+    "allowed_object_types": {
+      "allowed": ["CLAS", "DEVC"]
+    },
+    "allowed_object_naming": true,
+    "object_naming": {
+      "clas": "^Z2UI5_C[LX]_CGUI_",
+      "patternKind": "required",
+      "ignoreNames": [],
+      "ignorePatterns": []
     }
   }
-  
+}
