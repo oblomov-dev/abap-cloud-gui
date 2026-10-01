@@ -26,6 +26,9 @@ CLASS ltcl_test DEFINITION FINAL FOR TESTING
     METHODS check_boolean FOR TESTING.
     METHODS t_comp FOR TESTING.
     METHODS attri_name_by_ref FOR TESTING.
+    METHODS fixed_values FOR TESTING.
+    METHODS fixed_values_of_range FOR TESTING.
+    METHODS no_value_help FOR TESTING.
 
 ENDCLASS.
 
@@ -197,6 +200,45 @@ CLASS ltcl_test IMPLEMENTATION.
                                                                                         val = lo_app->mt_range ) ).
     cl_abap_unit_assert=>assert_initial( z2ui5_cl_cgui_context=>attri_name_by_ref( app = lo_app
                                                                                    val = lv_copy ) ).
+
+  ENDMETHOD.
+
+  METHOD fixed_values.
+
+    DATA lv_flag TYPE xsdboolean.
+
+    DATA(lt_fix) = z2ui5_cl_cgui_context=>rtti_get_fixed_values( cl_abap_typedescr=>describe_by_data( lv_flag ) ).
+
+    cl_abap_unit_assert=>assert_equals( exp = 2
+                                        act = lines( lt_fix ) ).
+    READ TABLE lt_fix WITH KEY low = `X` TRANSPORTING NO FIELDS.
+    cl_abap_unit_assert=>assert_subrc( ).
+
+  ENDMETHOD.
+
+  METHOD fixed_values_of_range.
+
+    DATA lt_range TYPE RANGE OF xsdboolean.
+
+    DATA(lo_descr) = z2ui5_cl_cgui_context=>rtti_get_value_descr( lt_range ).
+
+    cl_abap_unit_assert=>assert_equals( exp = cl_abap_typedescr=>kind_elem
+                                        act = lo_descr->kind ).
+    cl_abap_unit_assert=>assert_equals( exp = abap_true
+                                        act = z2ui5_cl_cgui_context=>rtti_check_value_help( lo_descr ) ).
+
+  ENDMETHOD.
+
+  METHOD no_value_help.
+
+    DATA lv_text TYPE string.
+    DATA lv_char TYPE c LENGTH 10.
+
+    cl_abap_unit_assert=>assert_equals( exp = abap_false
+                                        act = z2ui5_cl_cgui_context=>rtti_check_value_help( cl_abap_typedescr=>describe_by_data( lv_text ) ) ).
+    cl_abap_unit_assert=>assert_equals( exp = abap_false
+                                        act = z2ui5_cl_cgui_context=>rtti_check_value_help( cl_abap_typedescr=>describe_by_data( lv_char ) ) ).
+    cl_abap_unit_assert=>assert_initial( z2ui5_cl_cgui_context=>rtti_get_value_table( cl_abap_typedescr=>describe_by_data( lv_char ) ) ).
 
   ENDMETHOD.
 

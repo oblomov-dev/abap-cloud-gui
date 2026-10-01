@@ -10,11 +10,26 @@
 "!       )->checkbox( val = p_test text = `Test run`
 "!       )->block_end( ).
 "! render( ) appends the screen to a node of an existing view, stringify( )
-"! returns it as a complete view of its own.
+"! returns it as a complete view of its own. With preview the fields are
+"! shown but not bound - any data object will do, which is how the
+"! selection screen painter shows a screen before its report exists.
 "! Two controls raise events the app answers: a select-option opens its
-"! value help with cs_event-select_option, a parameter with value_help
-"! with cs_event-value_request - both carry the attribute name as first
-"! event argument. z2ui5_cl_cgui_report handles both for you.
+"! range popup with cs_event-select_option, F4 on a field declared with
+"! value_help raises cs_event-value_request - both carry the attribute name
+"! as first event argument. A select-option with value_help gets a button
+"! of its own for the range popup. z2ui5_cl_cgui_report handles both for
+"! you, and declares value_help_auto: every field whose DDIC type has fixed
+"! values or a value table gets F4 without asking.
+"! A checkbox or a radio button group declared with user_command raises
+"! that event as soon as the user changes it - the classic USER-COMMAND.
+"! The screen can be changed before it is rendered, the classic
+"! AT SELECTION-SCREEN OUTPUT:
+"!   LOOP AT screen->loop_at_screen( ) INTO DATA(ls_screen).
+"!     IF ls_screen-group1 = `EXP`.
+"!       ls_screen-active = abap_false.
+"!       screen->modify_screen( ls_screen ).
+"!     ENDIF.
+"!   ENDLOOP.
 CLASS z2ui5_cl_cgui_selscreen DEFINITION PUBLIC FINAL CREATE PRIVATE.
 
   PUBLIC SECTION.
@@ -30,12 +45,33 @@ CLASS z2ui5_cl_cgui_selscreen DEFINITION PUBLIC FINAL CREATE PRIVATE.
         name       TYPE string,
         text       TYPE string,
         obligatory TYPE abap_bool,
+        shown      TYPE abap_bool,
       END OF ty_s_field.
     TYPES ty_t_field TYPE STANDARD TABLE OF ty_s_field WITH EMPTY KEY.
 
+    "! a line of loop_at_screen( ) - the classic SCREEN structure, with
+    "! abap_bool flags instead of '0' / '1'. id is the position of the field
+    "! on the screen, modify_screen( ) finds it by that - leave it unchanged
+    TYPES:
+      BEGIN OF ty_s_screen,
+        id        TYPE i,
+        name      TYPE string,
+        group1    TYPE string,
+        active    TYPE abap_bool,
+        input     TYPE abap_bool,
+        required  TYPE abap_bool,
+        invisible TYPE abap_bool,
+      END OF ty_s_screen.
+    TYPES ty_t_screen TYPE STANDARD TABLE OF ty_s_screen WITH EMPTY KEY.
+
+    "! value_help_auto - F4 for every field whose DDIC type has a standard
+    "! F4 (domain fixed values, value table); the caller answers
+    "! cs_event-value_request for them
     CLASS-METHODS factory
       IMPORTING
-        client        TYPE REF TO z2ui5_if_client
+        client          TYPE REF TO z2ui5_if_client
+        value_help_auto TYPE abap_bool DEFAULT abap_false
+        preview         TYPE abap_bool DEFAULT abap_false
       RETURNING
         VALUE(result) TYPE REF TO z2ui5_cl_cgui_selscreen.
 
@@ -62,30 +98,42 @@ CLASS z2ui5_cl_cgui_selscreen DEFINITION PUBLIC FINAL CREATE PRIVATE.
         VALUE(result) TYPE REF TO z2ui5_cl_cgui_selscreen.
 
     "! PARAMETERS - the control follows the type: DatePicker for a date,
-    "! TimePicker for a time, CheckBox for an abap_bool, Input otherwise
+    "! TimePicker for a time, CheckBox for an abap_bool, Input otherwise.
+    "! modif_id is MODIF ID (group1 of loop_at_screen( )), no_display is
+    "! NO-DISPLAY: the field keeps its value but is not shown
     METHODS parameter
       IMPORTING
         val           TYPE any
         text          TYPE clike     OPTIONAL
         obligatory    TYPE abap_bool DEFAULT abap_false
         value_help    TYPE abap_bool DEFAULT abap_false
+        modif_id      TYPE clike     OPTIONAL
+        no_display    TYPE abap_bool DEFAULT abap_false
       RETURNING
         VALUE(result) TYPE REF TO z2ui5_cl_cgui_selscreen.
 
-    "! PARAMETERS ... AS CHECKBOX
+    "! PARAMETERS ... AS CHECKBOX [USER-COMMAND] - user_command is raised
+    "! as event when the user changes the checkbox
     METHODS checkbox
       IMPORTING
         val           TYPE abap_bool
         text          TYPE clike OPTIONAL
+        modif_id      TYPE clike OPTIONAL
+        user_command  TYPE clike OPTIONAL
       RETURNING
         VALUE(result) TYPE REF TO z2ui5_cl_cgui_selscreen.
 
-    "! PARAMETERS ... RADIOBUTTON GROUP
+    "! PARAMETERS ... RADIOBUTTON GROUP [USER-COMMAND] - as in the classic
+    "! statement, a user_command at one button of the group applies to all
+    "! of them. Render the screen anew after each roundtrip: the event is
+    "! wired to the buttons that are not selected at render time
     METHODS radiobutton
       IMPORTING
         val           TYPE abap_bool
         text          TYPE clike OPTIONAL
         group         TYPE clike DEFAULT `RB1`
+        modif_id      TYPE clike OPTIONAL
+        user_command  TYPE clike OPTIONAL
       RETURNING
         VALUE(result) TYPE REF TO z2ui5_cl_cgui_selscreen.
 
@@ -95,6 +143,9 @@ CLASS z2ui5_cl_cgui_selscreen DEFINITION PUBLIC FINAL CREATE PRIVATE.
         val           TYPE STANDARD TABLE
         text          TYPE clike     OPTIONAL
         obligatory    TYPE abap_bool DEFAULT abap_false
+        value_help    TYPE abap_bool DEFAULT abap_false
+        modif_id      TYPE clike     OPTIONAL
+        no_display    TYPE abap_bool DEFAULT abap_false
       RETURNING
         VALUE(result) TYPE REF TO z2ui5_cl_cgui_selscreen.
 
@@ -102,6 +153,7 @@ CLASS z2ui5_cl_cgui_selscreen DEFINITION PUBLIC FINAL CREATE PRIVATE.
     METHODS comment
       IMPORTING
         text          TYPE clike
+        modif_id      TYPE clike OPTIONAL
       RETURNING
         VALUE(result) TYPE REF TO z2ui5_cl_cgui_selscreen.
 
@@ -111,11 +163,43 @@ CLASS z2ui5_cl_cgui_selscreen DEFINITION PUBLIC FINAL CREATE PRIVATE.
         text          TYPE clike
         event         TYPE clike
         icon          TYPE clike OPTIONAL
+        modif_id      TYPE clike OPTIONAL
       RETURNING
         VALUE(result) TYPE REF TO z2ui5_cl_cgui_selscreen.
 
+    "! LOOP AT SCREEN - one line per field, comment and button declared so
+    "! far, NO-DISPLAY fields left out
+    METHODS loop_at_screen
+      RETURNING
+        VALUE(result) TYPE ty_t_screen.
+
+    "! MODIFY SCREEN - active = abap_false hides the field and its label,
+    "! input = abap_false makes it read-only, required makes it obligatory,
+    "! invisible masks the input as a password field
+    METHODS modify_screen
+      IMPORTING
+        screen TYPE ty_s_screen.
+
+    "! show a message at the field - name is the attribute name, state one
+    "! of the UI5 value states Error, Warning, Success, Information
+    METHODS set_value_state
+      IMPORTING
+        name  TYPE clike
+        text  TYPE clike OPTIONAL
+        state TYPE clike DEFAULT `Error`.
+
+    "! the id of the control of a field on the screen - name is the
+    "! attribute name; what SET_FOCUS needs to move the cursor there
+    CLASS-METHODS field_id
+      IMPORTING
+        name          TYPE clike
+      RETURNING
+        VALUE(result) TYPE string.
+
     "! the input fields with their name and label - what a caller needs to
-    "! check OBLIGATORY fields before it runs the report
+    "! check OBLIGATORY fields before it runs the report. A field counts as
+    "! obligatory only while it is shown and ready for input; shown is set
+    "! for every field that is not hidden
     METHODS get_fields
       RETURNING
         VALUE(result) TYPE ty_t_field.
@@ -158,25 +242,38 @@ CLASS z2ui5_cl_cgui_selscreen DEFINITION PUBLIC FINAL CREATE PRIVATE.
         checkbox TYPE string VALUE `CHECKBOX`,
       END OF cs_control.
 
+    " the screen flags are kept negated (inactive, read_only), so that an
+    " item created with VALUE #( ) is shown and ready for input
     TYPES:
       BEGIN OF ty_s_item,
-        kind       TYPE string,
-        control    TYPE string,
-        name       TYPE string,
-        text       TYPE string,
-        bind       TYPE string,
-        value      TYPE string,
-        group      TYPE string,
-        event      TYPE string,
-        icon       TYPE string,
-        obligatory TYPE abap_bool,
-        value_help TYPE abap_bool,
-        max_length TYPE i,
+        kind         TYPE string,
+        control      TYPE string,
+        name         TYPE string,
+        text         TYPE string,
+        bind         TYPE string,
+        value        TYPE string,
+        group        TYPE string,
+        event        TYPE string,
+        icon         TYPE string,
+        required     TYPE abap_bool,
+        value_help   TYPE abap_bool,
+        max_length   TYPE i,
+        modif_id     TYPE string,
+        user_command TYPE string,
+        no_display   TYPE abap_bool,
+        inactive     TYPE abap_bool,
+        read_only    TYPE abap_bool,
+        invisible    TYPE abap_bool,
+        state        TYPE string,
+        state_text   TYPE string,
+        selected     TYPE abap_bool,
       END OF ty_s_item.
     TYPES ty_t_item TYPE STANDARD TABLE OF ty_s_item WITH EMPTY KEY.
 
     DATA client  TYPE REF TO z2ui5_if_client.
     DATA mt_item TYPE ty_t_item.
+    DATA mv_value_help_auto TYPE abap_bool.
+    DATA mv_preview         TYPE abap_bool.
 
     METHODS item_create
       IMPORTING
@@ -192,6 +289,12 @@ CLASS z2ui5_cl_cgui_selscreen DEFINITION PUBLIC FINAL CREATE PRIVATE.
       RETURNING
         VALUE(result) TYPE string.
 
+    METHODS value_help_check
+      IMPORTING
+        val           TYPE any
+      RETURNING
+        VALUE(result) TYPE abap_bool.
+
     METHODS control_by_type
       IMPORTING
         val           TYPE any
@@ -204,6 +307,24 @@ CLASS z2ui5_cl_cgui_selscreen DEFINITION PUBLIC FINAL CREATE PRIVATE.
         title         TYPE string OPTIONAL
       RETURNING
         VALUE(result) TYPE REF TO z2ui5_cl_ui5_view_builder.
+
+    "! the user command of a radio button group - the first one declared at
+    "! any of its buttons
+    METHODS group_user_command
+      IMPORTING
+        group         TYPE string
+      RETURNING
+        VALUE(result) TYPE string.
+
+    METHODS render_state
+      IMPORTING
+        node TYPE REF TO z2ui5_cl_ui5_view_builder
+        item TYPE ty_s_item.
+
+    METHODS render_id
+      IMPORTING
+        node TYPE REF TO z2ui5_cl_ui5_view_builder
+        item TYPE ty_s_item.
 
     METHODS render_label
       IMPORTING
@@ -235,6 +356,8 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
 
     result = NEW #( ).
     result->client = client.
+    result->mv_value_help_auto = value_help_auto.
+    result->mv_preview = preview.
 
   ENDMETHOD.
 
@@ -274,8 +397,14 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
                                  kind = cs_kind-parameter
                                  text = text ).
     ls_item-control    = control_by_type( val ).
-    ls_item-obligatory = obligatory.
+    ls_item-required   = obligatory.
     ls_item-value_help = value_help.
+    IF ls_item-value_help = abap_false
+        AND ( ls_item-control = cs_control-input OR ls_item-control = cs_control-number ).
+      ls_item-value_help = value_help_check( val ).
+    ENDIF.
+    ls_item-modif_id   = modif_id.
+    ls_item-no_display = no_display.
 
     DATA(lo_descr) = cl_abap_typedescr=>describe_by_data( val ).
     IF lo_descr->type_kind = cl_abap_typedescr=>typekind_char
@@ -293,7 +422,9 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
     DATA(ls_item) = item_create( val  = val
                                  kind = cs_kind-parameter
                                  text = text ).
-    ls_item-control = cs_control-checkbox.
+    ls_item-control      = cs_control-checkbox.
+    ls_item-modif_id     = modif_id.
+    ls_item-user_command = user_command.
 
     INSERT ls_item INTO TABLE mt_item.
     result = me.
@@ -305,7 +436,10 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
     DATA(ls_item) = item_create( val  = val
                                  kind = cs_kind-radiobutton
                                  text = text ).
-    ls_item-group = group.
+    ls_item-group        = group.
+    ls_item-modif_id     = modif_id.
+    ls_item-user_command = user_command.
+    ls_item-selected     = val.
 
     INSERT ls_item INTO TABLE mt_item.
     result = me.
@@ -317,11 +451,19 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
     DATA ls_item TYPE ty_s_item.
 
     ls_item-kind       = cs_kind-select.
-    ls_item-name       = name_get( val ).
-    ls_item-obligatory = obligatory.
+    IF mv_preview = abap_false.
+      ls_item-name = name_get( val ).
+    ENDIF.
+    ls_item-required   = obligatory.
+    ls_item-modif_id   = modif_id.
+    ls_item-no_display = no_display.
     ls_item-value      = z2ui5_cl_cgui_context=>range_to_text( val ).
+    ls_item-value_help = value_help.
+    IF ls_item-value_help = abap_false.
+      ls_item-value_help = value_help_check( val ).
+    ENDIF.
 
-    IF ls_item-name IS INITIAL.
+    IF ls_item-name IS INITIAL AND mv_preview = abap_false.
       RAISE EXCEPTION TYPE z2ui5_cx_cgui_error
         EXPORTING
           val = `SELECT_OPTION_NOT_AN_ATTRIBUTE - pass a PUBLIC attribute of the app`.
@@ -347,19 +489,71 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
 
   METHOD comment.
 
-    INSERT VALUE #( kind = cs_kind-comment
-                    text = text ) INTO TABLE mt_item.
+    INSERT VALUE #( kind     = cs_kind-comment
+                    text     = text
+                    modif_id = modif_id ) INTO TABLE mt_item.
     result = me.
 
   ENDMETHOD.
 
   METHOD button.
 
-    INSERT VALUE #( kind  = cs_kind-button
-                    text  = text
-                    event = event
-                    icon  = icon ) INTO TABLE mt_item.
+    INSERT VALUE #( kind     = cs_kind-button
+                    text     = text
+                    event    = event
+                    icon     = icon
+                    modif_id = modif_id ) INTO TABLE mt_item.
     result = me.
+
+  ENDMETHOD.
+
+  METHOD loop_at_screen.
+
+    LOOP AT mt_item REFERENCE INTO DATA(lr_item)
+         WHERE kind <> cs_kind-block_begin
+           AND kind <> cs_kind-block_end
+           AND kind <> cs_kind-line_begin
+           AND kind <> cs_kind-line_end
+           AND no_display = abap_false.
+      INSERT VALUE #( id        = sy-tabix
+                      name      = lr_item->name
+                      group1    = lr_item->modif_id
+                      active    = xsdbool( lr_item->inactive = abap_false )
+                      input     = xsdbool( lr_item->read_only = abap_false )
+                      required  = lr_item->required
+                      invisible = lr_item->invisible ) INTO TABLE result.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD modify_screen.
+
+    READ TABLE mt_item REFERENCE INTO DATA(lr_item) INDEX screen-id.
+    IF sy-subrc <> 0 OR lr_item->no_display = abap_true.
+      RETURN.
+    ENDIF.
+
+    lr_item->inactive  = xsdbool( screen-active = abap_false ).
+    lr_item->read_only = xsdbool( screen-input = abap_false ).
+    lr_item->required  = screen-required.
+    lr_item->invisible = screen-invisible.
+
+  ENDMETHOD.
+
+  METHOD set_value_state.
+
+    DATA(lv_name) = to_upper( name ).
+
+    LOOP AT mt_item REFERENCE INTO DATA(lr_item) WHERE name = lv_name.
+      lr_item->state      = state.
+      lr_item->state_text = text.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD field_id.
+
+    result = |cgui_f_{ to_lower( name ) }|.
 
   ENDMETHOD.
 
@@ -368,7 +562,12 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
     LOOP AT mt_item REFERENCE INTO DATA(lr_item) WHERE name IS NOT INITIAL.
       INSERT VALUE #( name       = lr_item->name
                       text       = lr_item->text
-                      obligatory = lr_item->obligatory ) INTO TABLE result.
+                      obligatory = xsdbool( lr_item->required = abap_true
+                                            AND lr_item->inactive = abap_false
+                                            AND lr_item->read_only = abap_false
+                                            AND lr_item->no_display = abap_false )
+                      shown      = xsdbool( lr_item->inactive = abap_false
+                                            AND lr_item->no_display = abap_false ) ) INTO TABLE result.
     ENDLOOP.
 
   ENDMETHOD.
@@ -376,8 +575,13 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
   METHOD item_create.
 
     result-kind = kind.
-    result-name = name_get( val ).
-    result-bind = client->_bind( val ).
+    IF mv_preview = abap_false.
+      result-name = name_get( val ).
+      result-bind = client->_bind( val ).
+    ELSEIF z2ui5_cl_cgui_context=>rtti_check_boolean( val ) = abap_true.
+      " a preview shows a flag as it is - every other field empty
+      result-bind = COND #( WHEN val = abap_true THEN `true` ELSE `false` ).
+    ENDIF.
 
     result-text = text.
     IF result-text IS INITIAL.
@@ -386,6 +590,16 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
     IF result-text IS INITIAL.
       result-text = result-name.
     ENDIF.
+
+  ENDMETHOD.
+
+  METHOD value_help_check.
+
+    IF mv_value_help_auto = abap_false.
+      RETURN.
+    ENDIF.
+
+    result = z2ui5_cl_cgui_context=>rtti_check_value_help( z2ui5_cl_cgui_context=>rtti_get_value_descr( val ) ).
 
   ENDMETHOD.
 
@@ -422,34 +636,51 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
 
   METHOD render.
 
+    " blocks and lines are opened with their first visible field, so that
+    " a block whose fields are all hidden leaves no empty frame behind
     DATA lo_form TYPE REF TO z2ui5_cl_ui5_view_builder.
     DATA lo_line TYPE REF TO z2ui5_cl_ui5_view_builder.
+    DATA lv_in_block TYPE abap_bool.
+    DATA lv_block_title TYPE string.
+    DATA lv_in_line TYPE abap_bool.
+    DATA lv_line_text TYPE string.
 
     LOOP AT mt_item REFERENCE INTO DATA(lr_item).
       CASE lr_item->kind.
 
         WHEN cs_kind-block_begin.
-          lo_form = form_open( node  = node
-                               title = lr_item->text ).
+          CLEAR: lo_form, lo_line, lv_in_line.
+          lv_in_block = abap_true.
+          lv_block_title = lr_item->text.
 
         WHEN cs_kind-block_end.
-          CLEAR lo_form.
+          CLEAR: lo_form, lo_line, lv_in_line, lv_in_block.
 
         WHEN cs_kind-line_begin.
-          IF lo_form IS NOT BOUND.
-            lo_form = form_open( node ).
-          ENDIF.
-          lo_form->tag( `Label`
-              )->a( n = `text` t = lr_item->text ).
-          lo_line = lo_form->ele( `HBox`
-              )->a( n = `alignItems` v = `Center` ).
+          CLEAR lo_line.
+          lv_in_line = abap_true.
+          lv_line_text = lr_item->text.
 
         WHEN cs_kind-line_end.
-          CLEAR lo_line.
+          CLEAR: lo_line, lv_in_line.
 
         WHEN OTHERS.
+          IF lr_item->inactive = abap_true OR lr_item->no_display = abap_true.
+            CONTINUE.
+          ENDIF.
           IF lo_form IS NOT BOUND.
-            lo_form = form_open( node ).
+            IF lv_in_block = abap_true.
+              lo_form = form_open( node  = node
+                                   title = lv_block_title ).
+            ELSE.
+              lo_form = form_open( node ).
+            ENDIF.
+          ENDIF.
+          IF lv_in_line = abap_true AND lo_line IS NOT BOUND.
+            lo_form->tag( `Label`
+                )->a( n = `text` t = lv_line_text ).
+            lo_line = lo_form->ele( `HBox`
+                )->a( n = `alignItems` v = `Center` ).
           ENDIF.
           IF lo_line IS BOUND.
             render_control( node   = lo_line
@@ -504,7 +735,7 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
 
     node->tag( `Label`
         )->a( n = `text`     t = lv_text
-        )->a( n = `required` b = item-obligatory ).
+        )->a( n = `required` b = item-required ).
 
   ENDMETHOD.
 
@@ -514,7 +745,7 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
         OR ( item-kind = cs_kind-parameter AND item-control <> cs_control-checkbox ) ).
       node->tag( `Label`
           )->a( n = `text`     t = item-text
-          )->a( n = `required` b = item-obligatory
+          )->a( n = `required` b = item-required
           )->a( n = `class`    v = `sapUiSmallMarginBegin sapUiTinyMarginEnd` ).
     ENDIF.
 
@@ -532,7 +763,17 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
         node->tag( `RadioButton`
             )->a( n = `text`      t = item-text
             )->a( n = `groupName` t = item-group
-            )->a( n = `selected`  v = item-bind ).
+            )->a( n = `selected`  v = item-bind
+            )->a( n = `editable`  b = xsdbool( item-read_only = abap_false ) ).
+        " only the buttons not selected now raise the user command: UI5 fires
+        " select at the button it deselects before that button's value has
+        " reached the model, and that roundtrip would carry two selected
+        " buttons. The view is rendered anew after every roundtrip, so the
+        " wiring follows the selection
+        DATA(lv_ucomm) = group_user_command( item-group ).
+        IF lv_ucomm IS NOT INITIAL AND item-selected = abap_false.
+          node->a( n = `select` v = client->_event( lv_ucomm ) ).
+        ENDIF.
 
       WHEN cs_kind-comment.
         node->tag( `Text`
@@ -540,9 +781,10 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
 
       WHEN cs_kind-button.
         node->tag( `Button`
-            )->a( n = `text`  t = item-text
-            )->a( n = `icon`  v = item-icon
-            )->a( n = `press` v = client->_event( item-event ) ).
+            )->a( n = `text`    t = item-text
+            )->a( n = `icon`    v = item-icon
+            )->a( n = `enabled` b = xsdbool( item-read_only = abap_false )
+            )->a( n = `press`   v = client->_event( item-event ) ).
 
     ENDCASE.
 
@@ -555,7 +797,13 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
       WHEN cs_control-checkbox.
         node->tag( `CheckBox`
             )->a( n = `text`     t = item-text
-            )->a( n = `selected` v = item-bind ).
+            )->a( n = `selected` v = item-bind
+            )->a( n = `editable` b = xsdbool( item-read_only = abap_false ) ).
+        render_id( node = node
+                   item = item ).
+        IF item-user_command IS NOT INITIAL.
+          node->a( n = `select` v = client->_event( item-user_command ) ).
+        ENDIF.
 
       WHEN cs_control-date.
         node->tag( `DatePicker`
@@ -563,21 +811,38 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
             )->a( n = `value`         v = item-bind
             )->a( n = `valueFormat`   v = `yyyy-MM-dd`
             )->a( n = `displayFormat` v = `medium`
-            )->a( n = `required`      b = item-obligatory ).
+            )->a( n = `required`      b = item-required
+            )->a( n = `editable`      b = xsdbool( item-read_only = abap_false ) ).
+        render_id( node = node
+                   item = item ).
+        render_state( node = node
+                      item = item ).
 
       WHEN cs_control-time.
         node->tag( `TimePicker`
             )->a( n = `value`         v = item-bind
             )->a( n = `valueFormat`   v = `HH:mm:ss`
             )->a( n = `displayFormat` v = `HH:mm:ss`
-            )->a( n = `required`      b = item-obligatory ).
+            )->a( n = `required`      b = item-required
+            )->a( n = `editable`      b = xsdbool( item-read_only = abap_false ) ).
+        render_id( node = node
+                   item = item ).
+        render_state( node = node
+                      item = item ).
 
       WHEN OTHERS.
         node->tag( `Input`
             )->a( n = `value`    v = item-bind
-            )->a( n = `required` b = item-obligatory ).
+            )->a( n = `required` b = item-required
+            )->a( n = `editable` b = xsdbool( item-read_only = abap_false ) ).
+        render_id( node = node
+                   item = item ).
+        render_state( node = node
+                      item = item ).
         IF item-control = cs_control-number.
           node->a( n = `type` v = `Number` ).
+        ELSEIF item-invisible = abap_true.
+          node->a( n = `type` v = `Password` ).
         ENDIF.
         IF item-max_length > 0.
           node->a( n = `maxLength` v = |{ item-max_length }| ).
@@ -594,13 +859,85 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
 
   METHOD render_select_option.
 
-    node->tag( `Input`
-        )->a( n = `value`            t = item-value
-        )->a( n = `required`         b = item-obligatory
+    " without a value help F4 is the range popup; with one, F4 picks values
+    " and the button beside the field - the classic multiple selection -
+    " opens the range popup
+    DATA lv_event TYPE string VALUE cs_event-select_option.
+    DATA lo_box   TYPE REF TO z2ui5_cl_ui5_view_builder.
+    DATA lo_input TYPE REF TO z2ui5_cl_ui5_view_builder.
+
+    IF item-value_help = abap_true.
+      lv_event = cs_event-value_request.
+      " field and button share the row the form gives the field
+      lo_box = node->ele( `HBox`
+          )->a( n = `width`      v = `100%`
+          )->a( n = `alignItems` v = `Center` ).
+      lo_input = lo_box->ele( `Input` ).
+    ELSE.
+      " tag( ) stays on node - the a( ) below lands on the Input all the same
+      lo_input = node->tag( `Input` ).
+    ENDIF.
+
+    lo_input->a( n = `value`            t = item-value
+        )->a( n = `required`         b = item-required
+        )->a( n = `editable`         b = xsdbool( item-read_only = abap_false )
         )->a( n = `showValueHelp`    b = abap_true
         )->a( n = `valueHelpOnly`    b = abap_true
-        )->a( n = `valueHelpRequest` v = client->_event( val = cs_event-select_option
+        )->a( n = `valueHelpRequest` v = client->_event( val = lv_event
                                                          arg = item-name ) ).
+    render_id( node = lo_input
+               item = item ).
+    render_state( node = lo_input
+                  item = item ).
+
+    IF item-value_help = abap_false.
+      RETURN.
+    ENDIF.
+
+    lo_input->ele( `layoutData`
+        )->tag( `FlexItemData`
+        )->a( n = `growFactor` v = `1` ).
+
+    lo_box->tag( `Button`
+        )->a( n = `icon`    v = `sap-icon://filter`
+        )->a( n = `tooltip` v = `Multiple selection`
+        )->a( n = `enabled` b = xsdbool( item-read_only = abap_false )
+        )->a( n = `class`   v = `sapUiTinyMarginBegin`
+        )->a( n = `press`   v = client->_event( val = cs_event-select_option
+                                                arg = item-name ) ).
+
+  ENDMETHOD.
+
+  METHOD render_id.
+
+    IF item-name IS NOT INITIAL.
+      node->a( n = `id` v = field_id( item-name ) ).
+    ENDIF.
+
+  ENDMETHOD.
+
+  METHOD render_state.
+
+    IF item-state IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    node->a( n = `valueState` t = item-state ).
+    IF item-state_text IS NOT INITIAL.
+      node->a( n = `valueStateText` t = item-state_text ).
+    ENDIF.
+
+  ENDMETHOD.
+
+  METHOD group_user_command.
+
+    LOOP AT mt_item REFERENCE INTO DATA(lr_item)
+         WHERE kind = cs_kind-radiobutton
+           AND group = group
+           AND user_command IS NOT INITIAL.
+      result = lr_item->user_command.
+      RETURN.
+    ENDLOOP.
 
   ENDMETHOD.
 

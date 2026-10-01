@@ -18,6 +18,23 @@ CLASS z2ui5_cl_cgui_context DEFINITION PUBLIC FINAL CREATE PUBLIC.
       END OF ty_s_comp.
     TYPES ty_t_comp TYPE STANDARD TABLE OF ty_s_comp WITH EMPTY KEY.
 
+    TYPES:
+      BEGIN OF ty_s_fix_val,
+        low  TYPE string,
+        high TYPE string,
+        text TYPE string,
+      END OF ty_s_fix_val.
+    TYPES ty_t_fix_val TYPE STANDARD TABLE OF ty_s_fix_val WITH EMPTY KEY.
+
+    "! the value table of a domain: the table, its key field with the
+    "! domain, and the fields worth showing - every field but the client
+    TYPES:
+      BEGIN OF ty_s_value_table,
+        table  TYPE string,
+        field  TYPE string,
+        fields TYPE string_table,
+      END OF ty_s_value_table.
+
     " the name of the PUBLIC attribute of app that val is - compared by
     " reference, so val must be the attribute itself (passed by reference),
     " not a copy of it. Empty when val is no attribute of app
@@ -93,6 +110,37 @@ CLASS z2ui5_cl_cgui_context DEFINITION PUBLIC FINAL CREATE PUBLIC.
         descr         TYPE REF TO cl_abap_typedescr
       RETURNING
         VALUE(result) TYPE string.
+
+    "! the type a value help is looked up for: val itself, or the LOW
+    "! component of a range table
+    CLASS-METHODS rtti_get_value_descr
+      IMPORTING
+        val           TYPE any
+      RETURNING
+        VALUE(result) TYPE REF TO cl_abap_typedescr.
+
+    "! the fixed values of the domain of a DDIC type - empty for any other
+    "! type. On ABAP Cloud as on premise, and in the transpiled runtime
+    CLASS-METHODS rtti_get_fixed_values
+      IMPORTING
+        descr         TYPE REF TO cl_abap_typedescr
+      RETURNING
+        VALUE(result) TYPE ty_t_fix_val.
+
+    "! the value table of the domain of a DDIC type - on premise only, empty
+    "! on ABAP Cloud, where the DDIC is not read
+    CLASS-METHODS rtti_get_value_table
+      IMPORTING
+        descr         TYPE REF TO cl_abap_typedescr
+      RETURNING
+        VALUE(result) TYPE ty_s_value_table.
+
+    "! does the type have a standard F4 - fixed values or a value table
+    CLASS-METHODS rtti_check_value_help
+      IMPORTING
+        descr         TYPE REF TO cl_abap_typedescr
+      RETURNING
+        VALUE(result) TYPE abap_bool.
 
   PROTECTED SECTION.
   PRIVATE SECTION.
@@ -406,6 +454,186 @@ CLASS z2ui5_cl_cgui_context IMPLEMENTATION.
       WHEN `NP`.
         result = xsdbool( val NP low ).
     ENDCASE.
+
+  ENDMETHOD.
+
+  METHOD rtti_get_value_descr.
+
+    DATA lo_line TYPE REF TO cl_abap_structdescr.
+
+    TRY.
+        result = cl_abap_typedescr=>describe_by_data( val ).
+        IF result->kind <> cl_abap_typedescr=>kind_table.
+          RETURN.
+        ENDIF.
+        lo_line ?= CAST cl_abap_tabledescr( result )->get_table_line_type( ).
+        result = lo_line->get_component_type( `LOW` ).
+      CATCH cx_root.
+        CLEAR result.
+    ENDTRY.
+
+  ENDMETHOD.
+
+  METHOD rtti_get_fixed_values.
+
+    " DDFIXVALUE, declared here: the structure is not released on ABAP Cloud,
+    " the method is - so it is called dynamically, as abap2UI5 itself does
+    TYPES:
+      BEGIN OF ty_s_fixvalue,
+        low        TYPE c LENGTH 10,
+        high       TYPE c LENGTH 10,
+        option     TYPE c LENGTH 2,
+        ddlanguage TYPE c LENGTH 1,
+        ddtext     TYPE c LENGTH 60,
+      END OF ty_s_fixvalue.
+    TYPES ty_t_fixvalue TYPE STANDARD TABLE OF ty_s_fixvalue WITH DEFAULT KEY.
+    DATA lt_values TYPE ty_t_fixvalue.
+    DATA lo_elem   TYPE REF TO cl_abap_elemdescr.
+    DATA lv_langu  TYPE c LENGTH 1.
+
+    IF descr IS NOT BOUND OR descr->kind <> cl_abap_typedescr=>kind_elem.
+      RETURN.
+    ENDIF.
+
+    TRY.
+        IF descr->is_ddic_type( ) = abap_false.
+          RETURN.
+        ENDIF.
+        lo_elem ?= descr.
+        lv_langu = sy-langu.
+
+        CALL METHOD lo_elem->(`GET_DDIC_FIXED_VALUES`)
+          EXPORTING
+            p_langu        = lv_langu
+          RECEIVING
+            p_fixed_values = lt_values
+          EXCEPTIONS
+            not_found      = 1
+            no_ddic_type   = 2
+            OTHERS         = 3.
+        IF sy-subrc <> 0.
+          RETURN.
+        ENDIF.
+      CATCH cx_root.
+        RETURN.
+    ENDTRY.
+
+    LOOP AT lt_values REFERENCE INTO DATA(lr_value).
+      INSERT VALUE #( low  = lr_value->low
+                      high = lr_value->high
+                      text = lr_value->ddtext ) INTO TABLE result.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD rtti_get_value_table.
+
+    DATA lr_dfies  TYPE REF TO data.
+    DATA lr_fields TYPE REF TO data.
+    DATA lo_type   TYPE REF TO cl_abap_datadescr.
+    DATA lo_table  TYPE REF TO cl_abap_structdescr.
+    DATA lv_table  TYPE string.
+    DATA lv_domain TYPE string.
+    FIELD-SYMBOLS <dfies>  TYPE any.
+    FIELD-SYMBOLS <fields> TYPE STANDARD TABLE.
+    FIELD-SYMBOLS <field>  TYPE any.
+    FIELD-SYMBOLS <comp>   TYPE any.
+    FIELD-SYMBOLS <key>    TYPE any.
+    FIELD-SYMBOLS <dom>    TYPE any.
+    FIELD-SYMBOLS <type>   TYPE any.
+
+    IF descr IS NOT BOUND OR descr->kind <> cl_abap_typedescr=>kind_elem.
+      RETURN.
+    ENDIF.
+
+    TRY.
+        IF descr->is_ddic_type( ) = abap_false.
+          RETURN.
+        ENDIF.
+
+        " DFIES and DDFIELDS are not released on ABAP Cloud - there the
+        " lookup raises and the field has no value table
+        lo_type ?= cl_abap_typedescr=>describe_by_name( `DFIES` ).
+        CREATE DATA lr_dfies TYPE HANDLE lo_type.
+        ASSIGN lr_dfies->* TO <dfies>.
+
+        CALL METHOD descr->(`GET_DDIC_FIELD`)
+          RECEIVING
+            p_flddescr   = <dfies>
+          EXCEPTIONS
+            not_found    = 1
+            no_ddic_type = 2
+            OTHERS       = 3.
+        IF sy-subrc <> 0.
+          RETURN.
+        ENDIF.
+
+        ASSIGN COMPONENT `ENTITYTAB` OF STRUCTURE <dfies> TO <comp>.
+        IF <comp> IS NOT ASSIGNED.
+          RETURN.
+        ENDIF.
+        lv_table = <comp>.
+        UNASSIGN <comp>.
+        ASSIGN COMPONENT `DOMNAME` OF STRUCTURE <dfies> TO <comp>.
+        IF lv_table IS INITIAL OR <comp> IS NOT ASSIGNED.
+          RETURN.
+        ENDIF.
+        lv_domain = <comp>.
+
+        lo_table ?= cl_abap_typedescr=>describe_by_name( lv_table ).
+        lo_type ?= cl_abap_typedescr=>describe_by_name( `DDFIELDS` ).
+        CREATE DATA lr_fields TYPE HANDLE lo_type.
+        ASSIGN lr_fields->* TO <fields>.
+
+        CALL METHOD lo_table->(`GET_DDIC_FIELD_LIST`)
+          RECEIVING
+            p_field_list = <fields>
+          EXCEPTIONS
+            not_found    = 1
+            no_ddic_type = 2
+            OTHERS       = 3.
+        IF sy-subrc <> 0.
+          RETURN.
+        ENDIF.
+
+        LOOP AT <fields> ASSIGNING <field>.
+          UNASSIGN: <comp>, <key>, <dom>, <type>.
+          ASSIGN COMPONENT `FIELDNAME` OF STRUCTURE <field> TO <comp>.
+          ASSIGN COMPONENT `KEYFLAG` OF STRUCTURE <field> TO <key>.
+          ASSIGN COMPONENT `DOMNAME` OF STRUCTURE <field> TO <dom>.
+          ASSIGN COMPONENT `DATATYPE` OF STRUCTURE <field> TO <type>.
+          IF <comp> IS NOT ASSIGNED OR <key> IS NOT ASSIGNED OR <dom> IS NOT ASSIGNED OR <type> IS NOT ASSIGNED.
+            RETURN.
+          ENDIF.
+          IF <type> = `CLNT`.
+            CONTINUE.
+          ENDIF.
+          INSERT CONV string( <comp> ) INTO TABLE result-fields.
+          IF result-field IS INITIAL AND <key> = abap_true AND <dom> = lv_domain.
+            result-field = <comp>.
+          ENDIF.
+        ENDLOOP.
+
+        IF result-field IS INITIAL.
+          CLEAR result.
+          RETURN.
+        ENDIF.
+        result-table = lv_table.
+
+      CATCH cx_root.
+        CLEAR result.
+    ENDTRY.
+
+  ENDMETHOD.
+
+  METHOD rtti_check_value_help.
+
+    IF rtti_get_fixed_values( descr ) IS NOT INITIAL.
+      result = abap_true.
+      RETURN.
+    ENDIF.
+
+    result = xsdbool( rtti_get_value_table( descr )-table IS NOT INITIAL ).
 
   ENDMETHOD.
 

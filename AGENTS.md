@@ -13,8 +13,9 @@ list, ALV grid, messages. Language of code, comments, commits and docs:
 
 | Path | Content |
 |---|---|
-| `src/01` | the framework: `z2ui5_cl_cgui_report` (report runtime), `_selscreen`, `_list`, `_alv`, `_context` (RTTI and conversion helpers), `z2ui5_cx_cgui_error` |
-| `src/02` | samples `z2ui5_cl_cgui_sample_01` … `_05` |
+| `src/01` | the framework: `z2ui5_cl_cgui_report` (report runtime), `_selscreen`, `_list`, `_alv`, `_variant` (selection variants), `_context` (RTTI and conversion helpers), `z2ui5_cx_cgui_error` |
+| `src/02` | samples `z2ui5_cl_cgui_sample_01` … `_07` |
+| `src/03` | tools: the selection screen painter `z2ui5_cl_cgui_painter` and its code generator `_painter_code` |
 | `.github/abaplint` | the Cloud and 7.02 gate configs; `abaplint.jsonc` at the root is the v750 inner loop |
 
 Naming: every class is `Z2UI5_CL_CGUI_*` / `Z2UI5_CX_CGUI_*` (abaplint
@@ -28,7 +29,7 @@ Naming: every class is `Z2UI5_CL_CGUI_*` / `Z2UI5_CX_CGUI_*` (abaplint
   `z2ui5_cl_ui5_util_context` (copy a helper into `z2ui5_cl_cgui_context`
   instead).
 - [abap2UI5-addons/popups](https://github.com/abap2UI5-addons/popups) —
-  `z2ui5_cl_popup_get_range`, `_to_confirm`, `_to_select`.
+  `z2ui5_cl_popup_get_range`, `_to_confirm`, `_to_select`, `_input_val`.
 
 abaplint resolves these as git dependencies. The core is **pinned to a
 release tag** (the `"branch"` key of the abap2UI5 dependency, abap2UI5
@@ -73,6 +74,50 @@ is the floor — `npm run check:abap2ui5` (the abap2UI5-linter).
   `yyyy-MM-dd` and `HH:mm:ss`.
 - **`IN` in the transpiled runtime** only knows `I EQ`, `E EQ`, `I CP`; the
   samples use `z2ui5_cl_cgui_context=>range_check( )`.
+- **A radio button's `select` fires at the button it deselects too** — before
+  that button's `false` reaches the model, so a roundtrip from there carries
+  two selected buttons. The user command of a group is wired only to the
+  buttons not selected at render time; the screen is rendered anew after
+  every roundtrip, so the wiring follows the selection.
+- **The standard F4 reads the DDIC dynamically.** `GET_DDIC_FIXED_VALUES`
+  is called with a local copy of `DDFIXVALUE` (as abap2UI5 core does), and
+  the value table goes through `DFIES` / `DDFIELDS`, which raise on ABAP
+  Cloud - every lookup sits in a `TRY` and an error means "no F4". In tests
+  use `XSDBOOLEAN`: it is the one data element with fixed values that both
+  the abaplint API set and the transpiled runtime know.
+- **`z2ui5_cl_popup_to_select` preselects through `ZZSELKZ`.** It copies the
+  rows with `MOVE-CORRESPONDING` into its own table, whose `ZZSELKZ` is bound
+  to `selected` - so a table that brings a `ZZSELKZ` comes up checked. The
+  popup heads a column with the DDIC label of its type, and with `STRING`
+  for a string: give value lists character types.
+- **Variants live in the browser's local storage** - this repository has no
+  table of its own. The invisible `z2ui5:Storage` control reads the catalog
+  into the PUBLIC `mv_cgui_variants` and fires `finished` while the first
+  view still renders - the wire needs `check_queue_last`, or the event is
+  dropped. `STORE_DATA` is called from a handler with a payload composed as
+  JSON (`z2ui5_cl_cgui_variant=>storage_json( )`), never with
+  `${ _bind( ) }`: a handler's binding argument arrives as text, and an
+  empty VALUE deletes the key. Keep bound and stored value equal after a
+  write, or the control reports again on the next render. A variant in the
+  URL is read after `initialization( )`, so it wins over `set_variant( )`.
+- **The painter's code must compile as it is.** A change to
+  `z2ui5_cl_cgui_painter_code` is checked by generating a class (the
+  painter's Sample, plus a select-option with `c LENGTH`) and running the
+  three abaplint gates over it as a class of `src/02`, not only by the unit
+  tests. The preview uses `z2ui5_cl_cgui_selscreen` with `preview`: nothing
+  is bound, a flag renders its value literally.
+- **The message popover is part of the screen and opens in a roundtrip of
+  its own.** It is a dependent of the page; the footer button toggles it in
+  the browser (`control_by_id` `toggleBy`, no roundtrip). Opened by the
+  response that builds the screen - `openBy` as a follow-up action, or a
+  popover through `popover_display( )` - it stayed open without ever being
+  rendered after the first time, because the frontend holds the rendering
+  back while it swaps the view. So a run with W or E arms `start_timer`
+  with 0 ms and `CGUI_MESSAGES_OPEN` opens it without drawing the screen
+  again. The click on a message reaches the backend with the item as its
+  argument (`${$parameters>/item}` arrives as JSON with the item's id),
+  whose `cgui_msg_<n>` is the index into the log; the field control has the
+  id `z2ui5_cl_cgui_selscreen=>field_id( )` for `SET_FOCUS`.
 - **The report dispatcher is one IF/ELSEIF chain** over `check_on_init`,
   `check_on_navigated`, `check_on_event`, and every branch that shows the
   screen calls `view_display( )` — unless a popup app was called in the same
@@ -84,4 +129,8 @@ The views can be driven without an SAP system: transpile `src` plus the
 popups used against `@abap2ui5/node-runtime` (the mcp-server's
 `lib/npm-backend.mjs` `buildNpm`), start `lib/npm-host.mjs`, and drive the
 app with Playwright. The unit tests run the same way in CI
-(`.github/workflows/unit.yaml`).
+(`.github/workflows/unit.yaml`); locally
+`node <mcp-server>/scripts/ci-unit.mjs` with the same paths.
+Where the UI5 CDN (`sdk.openui5.org`) is not reachable, serve the
+`@openui5/*/src` packages the linter installs in `node_modules` through a
+Playwright `page.route( )`, with `bypassCSP: true` for the source bootstrap.
