@@ -30,6 +30,19 @@ Naming: every class is `Z2UI5_CL_CGUI_*` / `Z2UI5_CX_CGUI_*` (abaplint
 - [abap2UI5-addons/popups](https://github.com/abap2UI5-addons/popups) —
   `z2ui5_cl_popup_get_range`, `_to_confirm`, `_to_select`.
 
+abaplint resolves these as git dependencies. The core is **pinned to a
+release tag** (the `"branch"` key of the abap2UI5 dependency, abap2UI5
+CONVENTIONS §9): users install a release next to this addon, so the gates
+run against that release and not against the framework's `main`. Three
+configs carry the pin (`abaplint.jsonc`, `.github/abaplint/abap_cloud.jsonc`,
+and the downported `<tag>-702` form in `.github/abaplint/abap_702.jsonc`);
+read and move them only with `scripts/core-pin.mjs` (`get` fails when they
+disagree). `bump-core.yaml` moves the pin weekly to the newest release after
+the three abaplint gates passed on it, and the scheduled `abaplint` run lints
+once against the core's `main` as the canary (`core-pin.mjs set main`, never
+committed). Do not drop the key: abaplint then clones `main` silently. popups
+and layout-management have no release tags and are resolved from `main`.
+
 ## Targets
 
 ABAP Cloud, Standard ABAP and NW 7.02. Write 7.50 syntax that downports;
