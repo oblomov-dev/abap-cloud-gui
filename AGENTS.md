@@ -14,7 +14,7 @@ list, ALV grid, messages. Language of code, comments, commits and docs:
 | Path | Content |
 |---|---|
 | `src/01` | the framework: `z2ui5_cl_cgui_report` (report runtime), `_selscreen`, `_list`, `_alv`, `_context` (RTTI and conversion helpers), `z2ui5_cx_cgui_error` |
-| `src/02` | samples `z2ui5_cl_cgui_sample_01` … `_05` |
+| `src/02` | samples `z2ui5_cl_cgui_sample_01` … `_06` |
 | `.github/abaplint` | the Cloud and 7.02 gate configs; `abaplint.jsonc` at the root is the v750 inner loop |
 
 Naming: every class is `Z2UI5_CL_CGUI_*` / `Z2UI5_CX_CGUI_*` (abaplint
@@ -60,6 +60,11 @@ is the floor — `npm run check:abap2ui5` (the abap2UI5-linter).
   `yyyy-MM-dd` and `HH:mm:ss`.
 - **`IN` in the transpiled runtime** only knows `I EQ`, `E EQ`, `I CP`; the
   samples use `z2ui5_cl_cgui_context=>range_check( )`.
+- **A radio button's `select` fires at the button it deselects too** — before
+  that button's `false` reaches the model, so a roundtrip from there carries
+  two selected buttons. The user command of a group is wired only to the
+  buttons not selected at render time; the screen is rendered anew after
+  every roundtrip, so the wiring follows the selection.
 - **The report dispatcher is one IF/ELSEIF chain** over `check_on_init`,
   `check_on_navigated`, `check_on_event`, and every branch that shows the
   screen calls `view_display( )` — unless a popup app was called in the same
@@ -71,4 +76,8 @@ The views can be driven without an SAP system: transpile `src` plus the
 popups used against `@abap2ui5/node-runtime` (the mcp-server's
 `lib/npm-backend.mjs` `buildNpm`), start `lib/npm-host.mjs`, and drive the
 app with Playwright. The unit tests run the same way in CI
-(`.github/workflows/unit.yaml`).
+(`.github/workflows/unit.yaml`); locally
+`node <mcp-server>/scripts/ci-unit.mjs` with the same paths.
+Where the UI5 CDN (`sdk.openui5.org`) is not reachable, serve the
+`@openui5/*/src` packages the linter installs in `node_modules` through a
+Playwright `page.route( )`, with `bypassCSP: true` for the source bootstrap.

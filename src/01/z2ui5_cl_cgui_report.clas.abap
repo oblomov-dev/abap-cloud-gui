@@ -3,11 +3,18 @@
 "! screen as PUBLIC attributes and redefine the event blocks you need:
 "!   initialization        once, before the selection screen is shown
 "!   selection_screen      the layout: parameter( ), select_option( ), ...
+"!   at_selection_screen_output
+"!                         before the selection screen is shown - change
+"!                         it with loop_at_screen( ) / modify_screen( )
+"!   at_selection_screen_on
+"!                         after F8, once per field - a message( ) of type E
+"!                         marks the field and keeps the user on the screen
 "!   at_selection_screen   after F8, before the run - message( type = `E` )
 "!                         keeps the user on the selection screen
 "!   start_of_selection    read the data, output it with write( ) or alv( )
 "!   at_line_selection     a hotspot of the list or a row of the ALV clicked
-"!   at_user_command       a button of the selection screen or a confirmed
+"!   at_user_command       a button of the selection screen, a checkbox or
+"!                         radio button with user_command, or a confirmed
 "!                         popup_to_confirm( )
 "!   at_value_request      F4 on a parameter declared with value_help
 "! The runtime shows the selection screen, runs the blocks on Execute (F8),
@@ -33,8 +40,9 @@ CLASS z2ui5_cl_cgui_report DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
 
     TYPES:
       BEGIN OF ty_s_cgui_msg,
-        type TYPE string,
-        text TYPE string,
+        type  TYPE string,
+        text  TYPE string,
+        field TYPE string,
       END OF ty_s_cgui_msg.
     TYPES ty_t_cgui_msg TYPE STANDARD TABLE OF ty_s_cgui_msg WITH EMPTY KEY.
 
@@ -45,6 +53,20 @@ CLASS z2ui5_cl_cgui_report DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
     METHODS selection_screen
       IMPORTING
         screen TYPE REF TO z2ui5_cl_cgui_selscreen.
+
+    "! AT SELECTION-SCREEN OUTPUT - runs every time the selection screen is
+    "! shown, after selection_screen( ): change it with
+    "! screen->loop_at_screen( ) and screen->modify_screen( )
+    METHODS at_selection_screen_output
+      IMPORTING
+        screen TYPE REF TO z2ui5_cl_cgui_selscreen.
+
+    "! AT SELECTION-SCREEN ON field - runs after Execute once for every field
+    "! shown on the screen, field is its attribute name. A message( ) of
+    "! type E belongs to the field: it is marked and the run stops
+    METHODS at_selection_screen_on
+      IMPORTING
+        field TYPE string.
 
     METHODS at_selection_screen.
 
@@ -92,11 +114,14 @@ CLASS z2ui5_cl_cgui_report DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
       RETURNING
         VALUE(result) TYPE REF TO z2ui5_cl_cgui_alv.
 
-    "! MESSAGE text TYPE type - S, I, W, E or A
+    "! MESSAGE text TYPE type - S, I, W, E or A. field, the attribute name of
+    "! a field of the selection screen, marks that field with the message;
+    "! inside at_selection_screen_on( ) it is that method's field by default
     METHODS message
       IMPORTING
-        text TYPE clike
-        type TYPE clike DEFAULT `S`.
+        text  TYPE clike
+        type  TYPE clike DEFAULT `S`
+        field TYPE clike OPTIONAL.
 
     "! POPUP_TO_CONFIRM - on Yes, at_user_command( ) runs with ucomm
     METHODS popup_to_confirm
@@ -139,6 +164,7 @@ CLASS z2ui5_cl_cgui_report DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
     DATA mv_cgui_pending_field TYPE string.
     DATA mv_cgui_pending_kind  TYPE string.
     DATA mv_cgui_pending_col   TYPE string.
+    DATA mv_cgui_on_field      TYPE string.
 
   PRIVATE SECTION.
 
@@ -191,6 +217,10 @@ CLASS z2ui5_cl_cgui_report DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
 
     METHODS messages_display.
 
+    METHODS value_state_set
+      IMPORTING
+        screen TYPE REF TO z2ui5_cl_cgui_selscreen.
+
 ENDCLASS.
 
 
@@ -232,6 +262,12 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD selection_screen ##NEEDED.
+  ENDMETHOD.
+
+  METHOD at_selection_screen_output ##NEEDED.
+  ENDMETHOD.
+
+  METHOD at_selection_screen_on ##NEEDED.
   ENDMETHOD.
 
   METHOD at_selection_screen ##NEEDED.
@@ -315,6 +351,15 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
       RETURN.
     ENDIF.
 
+    LOOP AT mt_cgui_field REFERENCE INTO DATA(lr_field) WHERE shown = abap_true.
+      mv_cgui_on_field = lr_field->name.
+      at_selection_screen_on( lr_field->name ).
+      CLEAR mv_cgui_on_field.
+      IF mv_cgui_stop = abap_true.
+        RETURN.
+      ENDIF.
+    ENDLOOP.
+
     at_selection_screen( ).
     IF mv_cgui_stop = abap_true.
       RETURN.
@@ -337,7 +382,9 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
 
   METHOD check_obligatory.
 
+    " every empty required field is marked, the message names the first
     FIELD-SYMBOLS <val> TYPE any.
+    DATA lv_first TYPE string.
 
     LOOP AT mt_cgui_field REFERENCE INTO DATA(lr_field) WHERE obligatory = abap_true.
       DATA(lr_val) = attri_assign( lr_field->name ).
@@ -345,14 +392,23 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
         CONTINUE.
       ENDIF.
       ASSIGN lr_val->* TO <val>.
-      IF <val> IS INITIAL.
-        message( text = |Fill in all required entry fields ({ lr_field->text })|
-                 type = `E` ).
-        RETURN.
+      IF <val> IS NOT INITIAL.
+        CONTINUE.
       ENDIF.
+      IF lv_first IS INITIAL.
+        lv_first = lr_field->text.
+      ENDIF.
+      INSERT VALUE #( type  = `E`
+                      field = lr_field->name ) INTO TABLE mt_cgui_msg.
     ENDLOOP.
 
-    result = abap_true.
+    IF lv_first IS INITIAL.
+      result = abap_true.
+      RETURN.
+    ENDIF.
+
+    message( text = |Fill in all required entry fields ({ lv_first })|
+             type = `E` ).
 
   ENDMETHOD.
 
@@ -511,8 +567,16 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
 
   METHOD message.
 
-    INSERT VALUE #( type = to_upper( type )
-                    text = text ) INTO TABLE mt_cgui_msg.
+    DATA lv_field TYPE string.
+
+    lv_field = to_upper( field ).
+    IF lv_field IS INITIAL.
+      lv_field = mv_cgui_on_field.
+    ENDIF.
+
+    INSERT VALUE #( type  = to_upper( type )
+                    text  = text
+                    field = lv_field ) INTO TABLE mt_cgui_msg.
     IF type = `E` OR type = `A` OR type = `e` OR type = `a`.
       mv_cgui_stop = abap_true.
     ENDIF.
@@ -582,6 +646,8 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
     ELSE.
       DATA(screen) = z2ui5_cl_cgui_selscreen=>factory( client ).
       selection_screen( screen ).
+      at_selection_screen_output( screen ).
+      value_state_set( screen ).
       mt_cgui_field = screen->get_fields( ).
       screen->render( page ).
       lv_button_text = `Execute`.
@@ -628,12 +694,34 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
 
   ENDMETHOD.
 
+  METHOD value_state_set.
+
+    DATA lv_state TYPE string.
+
+    LOOP AT mt_cgui_msg REFERENCE INTO DATA(lr_msg) WHERE field IS NOT INITIAL.
+      CASE lr_msg->type.
+        WHEN `E` OR `A`.
+          lv_state = `Error`.
+        WHEN `W`.
+          lv_state = `Warning`.
+        WHEN `S`.
+          lv_state = `Success`.
+        WHEN OTHERS.
+          lv_state = `Information`.
+      ENDCASE.
+      screen->set_value_state( name  = lr_msg->field
+                               text  = lr_msg->text
+                               state = lv_state ).
+    ENDLOOP.
+
+  ENDMETHOD.
+
   METHOD messages_display.
 
     DATA lv_text TYPE string.
     DATA lv_type TYPE string VALUE `information`.
 
-    LOOP AT mt_cgui_msg REFERENCE INTO DATA(lr_msg).
+    LOOP AT mt_cgui_msg REFERENCE INTO DATA(lr_msg) WHERE text IS NOT INITIAL.
       IF lr_msg->type = `S`.
         client->message_toast_display( lr_msg->text ).
         CONTINUE.

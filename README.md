@@ -80,8 +80,8 @@ is a complete report.
 
 | Class | Classic counterpart |
 |---|---|
-| `z2ui5_cl_cgui_report` | the report itself — `INITIALIZATION`, `AT SELECTION-SCREEN`, `START-OF-SELECTION`, `AT LINE-SELECTION`, `AT USER-COMMAND`, `AT SELECTION-SCREEN ON VALUE-REQUEST`, `MESSAGE`, `POPUP_TO_CONFIRM` |
-| `z2ui5_cl_cgui_selscreen` | `PARAMETERS`, `SELECT-OPTIONS`, `SELECTION-SCREEN BEGIN OF BLOCK / LINE`, `COMMENT`, `PUSHBUTTON`, `AS CHECKBOX`, `RADIOBUTTON GROUP`, `OBLIGATORY` |
+| `z2ui5_cl_cgui_report` | the report itself — `INITIALIZATION`, `AT SELECTION-SCREEN OUTPUT`, `AT SELECTION-SCREEN ON field`, `AT SELECTION-SCREEN`, `START-OF-SELECTION`, `AT LINE-SELECTION`, `AT USER-COMMAND`, `AT SELECTION-SCREEN ON VALUE-REQUEST`, `MESSAGE`, `POPUP_TO_CONFIRM` |
+| `z2ui5_cl_cgui_selscreen` | `PARAMETERS`, `SELECT-OPTIONS`, `SELECTION-SCREEN BEGIN OF BLOCK / LINE`, `COMMENT`, `PUSHBUTTON`, `AS CHECKBOX`, `RADIOBUTTON GROUP`, `OBLIGATORY`, `NO-DISPLAY`, `MODIF ID`, `USER-COMMAND`, `LOOP AT SCREEN` / `MODIFY SCREEN` |
 | `z2ui5_cl_cgui_list` | `WRITE`, `NEW-LINE`, `SKIP`, `ULINE`, `NEW-PAGE`, `FORMAT COLOR`, `HOTSPOT`, `HIDE`, `AS CHECKBOX`, `AS ICON` |
 | `z2ui5_cl_cgui_alv` | `CL_SALV_TABLE` — columns and headers from RTTI/DDIC, sort, filter, double click |
 | `z2ui5_cl_cgui_context` | helpers — among them `range_check( )`, the `IN` of a select-option for internal tables |
@@ -100,15 +100,52 @@ Inherit from `z2ui5_cl_cgui_report`, declare the selection screen fields as
 |---|---|
 | `initialization` | once, before the selection screen is shown — set defaults here |
 | `selection_screen( screen )` | every time the selection screen is shown — the layout |
+| `at_selection_screen_output( screen )` | right after `selection_screen` — hide fields, make them read-only or required |
+| `at_selection_screen_on( field )` | after Execute, once per field shown — `message( type = 'E' )` marks the field and stops |
 | `at_selection_screen` | after Execute — `message( type = 'E' )` keeps the user on the selection screen |
 | `start_of_selection` | read the data, output it with `write( )` or `alv( )` |
 | `at_line_selection( row hide )` | a hotspot of the list or a row of the ALV was clicked |
-| `at_user_command( ucomm )` | a button of the selection screen, or a confirmed `popup_to_confirm( )` |
+| `at_user_command( ucomm )` | a button of the selection screen, a checkbox or radio button group with `user_command`, or a confirmed `popup_to_confirm( )` |
 | `at_value_request( field )` | F4 on a parameter declared with `value_help` — answer with `value_help_popup( )` |
 
 Messages follow the classic semantics: `S` as a toast, `I` and `W` as a box,
 `E` as a box that stops the run. Fields declared `obligatory` are checked
-before `at_selection_screen`.
+before `at_selection_screen`, and every empty one is marked. A message that
+belongs to a field — raised in `at_selection_screen_on( )`, or with
+`message( field = 'P_QTY' )` — marks that field with its text.
+
+### A dynamic selection screen
+
+`MODIF ID`, `USER-COMMAND` and `LOOP AT SCREEN` work as in a classic report:
+a radio button group or a checkbox with `user_command` runs
+`at_user_command( )` as soon as the user changes it, and the selection screen
+is built anew — `at_selection_screen_output( )` included.
+
+```abap
+METHOD selection_screen.
+  screen->radiobutton( val = p_disp   text = `Display` group = `MODE` user_command = `MODE`
+      )->radiobutton( val = p_create text = `Create`  group = `MODE`
+      )->parameter( val = p_matnr text = `Material`    modif_id = `DIS`
+      )->parameter( val = p_name  text = `Description` modif_id = `CRE` ).
+ENDMETHOD.
+
+METHOD at_selection_screen_output.
+  DATA(lt_screen) = screen->loop_at_screen( ).
+  LOOP AT lt_screen INTO DATA(ls_screen).
+    CASE ls_screen-group1.
+      WHEN `DIS`. ls_screen-active = p_disp.
+      WHEN `CRE`. ls_screen-active = p_create.
+    ENDCASE.
+    screen->modify_screen( ls_screen ).
+  ENDLOOP.
+ENDMETHOD.
+```
+
+A line of `loop_at_screen( )` has `name`, `group1`, `active`, `input`,
+`required` and `invisible` — as `abap_bool`, not `'0'` / `'1'`. `active` hides
+the field with its label (a block with no field left disappears), `input`
+makes it read-only, `required` obligatory, `invisible` masks the input like a
+password.
 
 ## Samples
 
@@ -119,6 +156,7 @@ before `at_selection_screen`.
 | `z2ui5_cl_cgui_sample_03` | the ALV on its own — column texts, a hidden column, row click |
 | `z2ui5_cl_cgui_sample_04` | the smallest report — hello world |
 | `z2ui5_cl_cgui_sample_05` | a complete report — select-option, F4 help, radio buttons for ALV or list, drilldown, reset with a confirmation popup |
+| `z2ui5_cl_cgui_sample_06` | a dynamic selection screen — `MODIF ID`, `USER-COMMAND`, `LOOP AT SCREEN`, read-only and password fields, `NO-DISPLAY`, `AT SELECTION-SCREEN ON field` |
 
 ## Compatibility
 
@@ -156,18 +194,21 @@ Known limitations:
 - [x] Phase 3 — output: ALV grid (RTTI/DDIC columns, sort, filter, row click),
       `WRITE` list (colors, icons, checkboxes, pages, hotspots, `HIDE`)
 - [x] Phase 4 — messages with classic semantics, `POPUP_TO_CONFIRM`
+- [x] Phase 5 — dynamic selection screen: `AT SELECTION-SCREEN OUTPUT` with
+      `LOOP AT SCREEN` / `MODIFY SCREEN` (hide, read-only, required,
+      invisible), `MODIF ID`, `USER-COMMAND` at checkboxes and radio button
+      groups, `NO-DISPLAY`, `AT SELECTION-SCREEN ON field` and messages with
+      the value state on their field; unit tests for the selection screen
 
 **Next**
 
 Selection screen
 
-- [ ] `AT SELECTION-SCREEN OUTPUT` / `LOOP AT SCREEN` with `MODIFY SCREEN`
-      (hide, read-only, required per field) and an update of the screen
 - [ ] Value helps: automatic F4 from domain fixed values, check tables and
       CDS value helps, shown in a popup; F4 inside the range popup of a
       select-option
-- [ ] `AT SELECTION-SCREEN ON field` with the value state on the field
-- [ ] `NO-DISPLAY`, `MEMORY ID`
+- [ ] `AT SELECTION-SCREEN ON BLOCK`, `ON RADIOBUTTON GROUP`, `AS LISTBOX`
+- [ ] `MEMORY ID`
 - [ ] Selection variants: save, load, start a report with a variant
 - [ ] Selection screen painter: build a selection screen visually and
       generate the `selection_screen( )` method
@@ -209,8 +250,9 @@ Output
 
 Quality
 
-- [ ] Tests for the selection screen and the ALV with a client test double,
-      samples in the abap2UI5 playground, documentation page
+- [ ] Tests for the report runtime and the ALV with a client test double
+      (the selection screen has them), samples in the abap2UI5 playground,
+      documentation page
 
 Later
 
