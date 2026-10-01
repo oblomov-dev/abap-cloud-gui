@@ -110,11 +110,15 @@ Inherit from `z2ui5_cl_cgui_report`, declare the selection screen fields as
 | `at_user_command( ucomm )` | a button of the selection screen, a checkbox or radio button group with `user_command`, or a confirmed `popup_to_confirm( )` |
 | `at_value_request( field )` | F4 on a field — the default is the standard F4 of its DDIC type; redefine it for your own and call `super->` for the rest |
 
-Messages follow the classic semantics: `S` as a toast, `I` and `W` as a box,
-`E` as a box that stops the run. Fields declared `obligatory` are checked
-before `at_selection_screen`, and every empty one is marked. A message that
+Messages follow the classic semantics — `S` as a toast, `I` as a box, `E`
+stops the run — and every message of a run but `S` is collected in the
+**message popover**: a button at the left of the footer counts them, in red
+for an error, and `W` and `E` open the popover by themselves. A message that
 belongs to a field — raised in `at_selection_screen_on( )`, or with
-`message( field = 'P_QTY' )` — marks that field with its text.
+`message( field = 'P_QTY' )` — marks that field with its text, names it in
+the popover, and a click on it puts the cursor into the field. Fields
+declared `obligatory` are checked before `at_selection_screen`, each empty
+one with a message of its own.
 
 ### A dynamic selection screen
 
@@ -277,6 +281,9 @@ Known limitations:
       storage
 - [x] Phase 8 — selection screen painter: elements in a table, live
       preview, the generated report class with a check of the design
+- [x] Phase 9 — message popover: the messages of a run in one place,
+      counted in the footer, opened by W and E, each message of a field
+      leading to the field; one message per empty required field
 
 **Next**
 
@@ -295,8 +302,6 @@ Selection screen
 
 Messages and logging
 
-- [ ] Message popover: all messages of a run in one place, warnings in
-      yellow, each message linked to its input field
 - [ ] Short API in the style of abap2UI5: `_msg( )->e( )`, `_msg_box( )->e( )`
 - [ ] Application log (BAL) and [ABAP Logger](https://github.com/ABAP-Logger/ABAP-Logger)
       as a source for the message popover and a log popup; the internal

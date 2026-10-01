@@ -106,6 +106,18 @@ is the floor — `npm run check:abap2ui5` (the abap2UI5-linter).
   three abaplint gates over it as a class of `src/02`, not only by the unit
   tests. The preview uses `z2ui5_cl_cgui_selscreen` with `preview`: nothing
   is bound, a flag renders its value literally.
+- **The message popover is part of the screen and opens in a roundtrip of
+  its own.** It is a dependent of the page; the footer button toggles it in
+  the browser (`control_by_id` `toggleBy`, no roundtrip). Opened by the
+  response that builds the screen - `openBy` as a follow-up action, or a
+  popover through `popover_display( )` - it stayed open without ever being
+  rendered after the first time, because the frontend holds the rendering
+  back while it swaps the view. So a run with W or E arms `start_timer`
+  with 0 ms and `CGUI_MESSAGES_OPEN` opens it without drawing the screen
+  again. The click on a message reaches the backend with the item as its
+  argument (`${$parameters>/item}` arrives as JSON with the item's id),
+  whose `cgui_msg_<n>` is the index into the log; the field control has the
+  id `z2ui5_cl_cgui_selscreen=>field_id( )` for `SET_FOCUS`.
 - **The report dispatcher is one IF/ELSEIF chain** over `check_on_init`,
   `check_on_navigated`, `check_on_event`, and every branch that shows the
   screen calls `view_display( )` — unless a popup app was called in the same

@@ -23,8 +23,10 @@
 "! shows the output and goes back on Back (F3). The values of the selection
 "! screen can be saved as variants, kept in the browser's local storage per
 "! report - start with one by set_variant( ) in initialization( ) or with
-"! the URL parameter variant=NAME. Messages follow the classic
-"! semantics: S as a toast, I and W as a box, E as a box that stops the run.
+"! the URL parameter variant=NAME. Messages follow the classic semantics -
+"! S as a toast, I as a box, E stops the run - and are collected in the
+"! message popover of the run: a button in the footer counts them, W and E
+"! open it, and a message of a field leads to the field.
 CLASS z2ui5_cl_cgui_report DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
 
   PUBLIC SECTION.
@@ -40,11 +42,18 @@ CLASS z2ui5_cl_cgui_report DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
         variant_delete    TYPE string VALUE `CGUI_VARIANT_DELETE`,
         variant_delete_ok TYPE string VALUE `CGUI_VARIANT_DELETE_OK`,
         variants_loaded   TYPE string VALUE `CGUI_VARIANTS_LOADED`,
+        message_focus     TYPE string VALUE `CGUI_MESSAGE_FOCUS`,
+        messages_open     TYPE string VALUE `CGUI_MESSAGES_OPEN`,
       END OF cs_ucomm.
 
     "! the prefix of the browser's local storage the variants are kept
     "! under, the key is the name of the report class
     CONSTANTS cv_cgui_variant_prefix TYPE string VALUE `z2ui5_cgui_variants`.
+
+    "! the id of the footer button the message popover opens on, and of the
+    "! popover itself
+    CONSTANTS cv_cgui_messages_id TYPE string VALUE `cgui_messages`.
+    CONSTANTS cv_cgui_popover_id  TYPE string VALUE `cgui_message_popover`.
 
     "! the output of alv( ) when the table passed is no attribute of the
     "! report - a copy, bound to the grid
@@ -198,6 +207,9 @@ CLASS z2ui5_cl_cgui_report DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
     DATA mv_cgui_alv_name      TYPE string.
     DATA mt_cgui_field         TYPE z2ui5_cl_cgui_selscreen=>ty_t_field.
     DATA mt_cgui_msg           TYPE ty_t_cgui_msg.
+    " the messages of the run, I, W, E and A - what the message popover
+    " lists; kept while the user picks one of them
+    DATA mt_cgui_log           TYPE ty_t_cgui_msg.
     DATA mv_cgui_stop          TYPE abap_bool.
     DATA mv_cgui_nav           TYPE abap_bool.
     DATA mv_cgui_value_field   TYPE string.
@@ -327,6 +339,21 @@ CLASS z2ui5_cl_cgui_report DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
 
     METHODS messages_display.
 
+    METHODS messages_render
+      IMPORTING
+        page    TYPE REF TO z2ui5_cl_ui5_view_builder
+        toolbar TYPE REF TO z2ui5_cl_ui5_view_builder.
+
+    METHODS message_focus
+      IMPORTING
+        arg TYPE string.
+
+    METHODS message_field_text
+      IMPORTING
+        field         TYPE string
+      RETURNING
+        VALUE(result) TYPE string.
+
     METHODS value_state_set
       IMPORTING
         screen TYPE REF TO z2ui5_cl_cgui_selscreen.
@@ -341,6 +368,11 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
     me->client = client.
     CLEAR mt_cgui_msg.
     mv_cgui_nav = abap_false.
+    " the messages of the run stay while the popover opens and the user
+    " picks one of them
+    IF client->get_event( ) <> cs_ucomm-message_focus AND client->get_event( ) <> cs_ucomm-messages_open.
+      CLEAR mt_cgui_log.
+    ENDIF.
 
     IF client->check_on_init( ).
       mv_cgui_screen = cs_screen-selection.
@@ -553,6 +585,16 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
 
       WHEN cs_ucomm-variants_loaded.
         on_variants_loaded( ).
+
+      WHEN cs_ucomm-messages_open.
+        " the screen stays as it is - the popover opens on it
+        mv_cgui_nav = abap_true.
+        client->follow_up_action( val   = client->cs_event-control_by_id
+                                  t_arg = VALUE #( ( cv_cgui_popover_id ) ( `openBy` ) ( cv_cgui_messages_id ) ) ).
+
+      WHEN cs_ucomm-message_focus.
+        mv_cgui_nav = abap_true.
+        message_focus( client->get_event_arg( ) ).
 
       WHEN cs_ucomm-variant_get.
         variant_popup( cs_pending-variant_get ).
@@ -877,10 +919,10 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
 
   METHOD check_obligatory.
 
-    " every empty required field is marked, the message names the first
+    " one message per empty required field, each at its field
     FIELD-SYMBOLS <val> TYPE any.
-    DATA lv_first TYPE string.
 
+    result = abap_true.
     LOOP AT mt_cgui_field REFERENCE INTO DATA(lr_field) WHERE obligatory = abap_true.
       DATA(lr_val) = attri_assign( lr_field->name ).
       IF lr_val IS NOT BOUND.
@@ -890,20 +932,11 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
       IF <val> IS NOT INITIAL.
         CONTINUE.
       ENDIF.
-      IF lv_first IS INITIAL.
-        lv_first = lr_field->text.
-      ENDIF.
-      INSERT VALUE #( type  = `E`
-                      field = lr_field->name ) INTO TABLE mt_cgui_msg.
+      message( text  = |Fill in the required field { lr_field->text }|
+               type  = `E`
+               field = lr_field->name ).
+      result = abap_false.
     ENDLOOP.
-
-    IF lv_first IS INITIAL.
-      result = abap_true.
-      RETURN.
-    ENDIF.
-
-    message( text = |Fill in all required entry fields ({ lv_first })|
-             type = `E` ).
 
   ENDMETHOD.
 
@@ -1110,10 +1143,14 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
       lv_field = mv_cgui_on_field.
     ENDIF.
 
-    INSERT VALUE #( type  = to_upper( type )
-                    text  = text
-                    field = lv_field ) INTO TABLE mt_cgui_msg.
-    IF type = `E` OR type = `A` OR type = `e` OR type = `a`.
+    DATA(ls_msg) = VALUE ty_s_cgui_msg( type  = to_upper( type )
+                                        text  = text
+                                        field = lv_field ).
+    INSERT ls_msg INTO TABLE mt_cgui_msg.
+    IF ls_msg-type <> `S`.
+      INSERT ls_msg INTO TABLE mt_cgui_log.
+    ENDIF.
+    IF ls_msg-type = `E` OR ls_msg-type = `A`.
       mv_cgui_stop = abap_true.
     ENDIF.
 
@@ -1232,6 +1269,9 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
     DATA(toolbar) = page->ele( `footer`
         )->ele( `OverflowToolbar` ).
 
+    messages_render( page    = page
+                     toolbar = toolbar ).
+
     IF mv_cgui_screen = cs_screen-selection AND mt_cgui_field IS NOT INITIAL.
       toolbar->tag( `Button`
           )->a( n = `text`  v = `Get Variant`
@@ -1288,7 +1328,7 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
 
     DATA lv_state TYPE string.
 
-    LOOP AT mt_cgui_msg REFERENCE INTO DATA(lr_msg) WHERE field IS NOT INITIAL.
+    LOOP AT mt_cgui_log REFERENCE INTO DATA(lr_msg) WHERE field IS NOT INITIAL.
       CASE lr_msg->type.
         WHEN `E` OR `A`.
           lv_state = `Error`.
@@ -1308,33 +1348,129 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
 
   METHOD messages_display.
 
-    DATA lv_text TYPE string.
-    DATA lv_type TYPE string VALUE `information`.
+    " S as a toast, I as a box - and W, E, A open the message popover,
+    " which lists the I messages of the run as well
+    DATA lv_text    TYPE string.
+    DATA lv_popover TYPE abap_bool.
 
-    LOOP AT mt_cgui_msg REFERENCE INTO DATA(lr_msg) WHERE text IS NOT INITIAL.
-      IF lr_msg->type = `S`.
-        client->message_toast_display( lr_msg->text ).
-        CONTINUE.
-      ENDIF.
-
-      IF lv_text IS NOT INITIAL.
-        lv_text = lv_text && cl_abap_char_utilities=>newline.
-      ENDIF.
-      lv_text = lv_text && lr_msg->text.
-
+    LOOP AT mt_cgui_msg REFERENCE INTO DATA(lr_msg).
       CASE lr_msg->type.
-        WHEN `E` OR `A`.
-          lv_type = `error`.
-        WHEN `W`.
-          IF lv_type <> `error`.
-            lv_type = `warning`.
+        WHEN `S`.
+          client->message_toast_display( lr_msg->text ).
+        WHEN `I`.
+          IF lv_text IS NOT INITIAL.
+            lv_text = lv_text && cl_abap_char_utilities=>newline.
           ENDIF.
+          lv_text = lv_text && lr_msg->text.
+        WHEN OTHERS.
+          lv_popover = abap_true.
       ENDCASE.
     ENDLOOP.
 
-    IF lv_text IS NOT INITIAL.
+    IF lv_popover = abap_true AND mv_cgui_nav = abap_false.
+      " the popover is part of the screen, and opened in a roundtrip of its
+      " own: opened by the response that builds the screen, it stayed open
+      " without ever being rendered (the frontend holds the rendering back
+      " while it swaps the view). A timer of no time raises that roundtrip
+      client->follow_up_action( val   = client->cs_event-start_timer
+                                t_arg = VALUE #( ( cs_ucomm-messages_open ) ( `0` ) ( `X` ) ) ).
+    ELSEIF lv_text IS NOT INITIAL.
       client->message_box_display( text = lv_text
-                                   type = lv_type ).
+                                   type = `information` ).
+    ENDIF.
+
+  ENDMETHOD.
+
+  METHOD messages_render.
+
+    " the button counts the messages of the run - icon and type follow the
+    " worst of them - and opens the popover in the browser, no roundtrip.
+    " The popover is a dependent of the page, not a popover of its own: it
+    " comes and goes with the screen it belongs to
+    DATA lv_index TYPE i.
+
+    IF mt_cgui_log IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    DATA(lv_icon) = `sap-icon://message-information`.
+    DATA(lv_type) = `Transparent`.
+    READ TABLE mt_cgui_log WITH KEY type = `W` TRANSPORTING NO FIELDS.
+    IF sy-subrc = 0.
+      lv_icon = `sap-icon://message-warning`.
+      lv_type = `Default`.
+    ENDIF.
+    LOOP AT mt_cgui_log TRANSPORTING NO FIELDS WHERE type = `E` OR type = `A`.
+      lv_icon = `sap-icon://message-error`.
+      lv_type = `Reject`.
+      EXIT.
+    ENDLOOP.
+
+    toolbar->tag( `Button`
+        )->a( n = `id`      v = cv_cgui_messages_id
+        )->a( n = `icon`    v = lv_icon
+        )->a( n = `type`    v = lv_type
+        )->a( n = `text`    t = |{ lines( mt_cgui_log ) }|
+        )->a( n = `tooltip` v = `Messages`
+        )->a( n = `press`   v = client->follow_up_action( val   = client->cs_event-control_by_id
+                                                          t_arg = VALUE #( ( cv_cgui_popover_id ) ( `toggleBy` ) ( cv_cgui_messages_id ) ) ) ).
+
+    DATA(items) = page->ele( `dependents`
+        )->ele( `MessagePopover`
+            )->a( n = `id`               v = cv_cgui_popover_id
+            )->a( n = `placement`        v = `Top`
+            )->a( n = `activeTitlePress` v = client->_event( val = cs_ucomm-message_focus
+                                                             arg = `${$parameters>/item}` )
+        )->ele( `items` ).
+
+    " the id carries the index into the log: the event hands the item over
+    " as its properties and its id, and the id leads back to the field
+    LOOP AT mt_cgui_log REFERENCE INTO DATA(lr_msg).
+      lv_index = sy-tabix.
+      items->tag( `MessageItem`
+          )->a( n = `id`          t = |cgui_msg_{ lv_index }|
+          )->a( n = `type`        v = SWITCH #( lr_msg->type
+                                                  WHEN `E` OR `A` THEN `Error`
+                                                  WHEN `W` THEN `Warning`
+                                                  ELSE `Information` )
+          )->a( n = `title`       t = lr_msg->text
+          )->a( n = `subtitle`    t = message_field_text( lr_msg->field )
+          )->a( n = `activeTitle` b = xsdbool( lr_msg->field IS NOT INITIAL AND mv_cgui_screen = cs_screen-selection ) ).
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD message_focus.
+
+    DATA lv_index TYPE string.
+
+    client->follow_up_action( val   = client->cs_event-control_by_id
+                              t_arg = VALUE #( ( cv_cgui_popover_id ) ( `close` ) ) ).
+
+    FIND REGEX `cgui_msg_(\d+)` IN arg SUBMATCHES lv_index.
+    IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
+    READ TABLE mt_cgui_log REFERENCE INTO DATA(lr_msg) INDEX CONV i( lv_index ).
+    IF sy-subrc <> 0 OR lr_msg->field IS INITIAL OR mv_cgui_screen <> cs_screen-selection.
+      RETURN.
+    ENDIF.
+
+    client->follow_up_action( val   = client->cs_event-set_focus
+                              t_arg = VALUE #( ( z2ui5_cl_cgui_selscreen=>field_id( lr_msg->field ) ) ) ).
+
+  ENDMETHOD.
+
+  METHOD message_field_text.
+
+    IF field IS INITIAL.
+      RETURN.
+    ENDIF.
+    READ TABLE mt_cgui_field REFERENCE INTO DATA(lr_field) WITH KEY name = field.
+    IF sy-subrc = 0.
+      result = lr_field->text.
+    ELSE.
+      result = field.
     ENDIF.
 
   ENDMETHOD.

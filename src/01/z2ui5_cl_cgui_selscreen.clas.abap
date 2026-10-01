@@ -188,6 +188,14 @@ CLASS z2ui5_cl_cgui_selscreen DEFINITION PUBLIC FINAL CREATE PRIVATE.
         text  TYPE clike OPTIONAL
         state TYPE clike DEFAULT `Error`.
 
+    "! the id of the control of a field on the screen - name is the
+    "! attribute name; what SET_FOCUS needs to move the cursor there
+    CLASS-METHODS field_id
+      IMPORTING
+        name          TYPE clike
+      RETURNING
+        VALUE(result) TYPE string.
+
     "! the input fields with their name and label - what a caller needs to
     "! check OBLIGATORY fields before it runs the report. A field counts as
     "! obligatory only while it is shown and ready for input; shown is set
@@ -309,6 +317,11 @@ CLASS z2ui5_cl_cgui_selscreen DEFINITION PUBLIC FINAL CREATE PRIVATE.
         VALUE(result) TYPE string.
 
     METHODS render_state
+      IMPORTING
+        node TYPE REF TO z2ui5_cl_ui5_view_builder
+        item TYPE ty_s_item.
+
+    METHODS render_id
       IMPORTING
         node TYPE REF TO z2ui5_cl_ui5_view_builder
         item TYPE ty_s_item.
@@ -535,6 +548,12 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
       lr_item->state      = state.
       lr_item->state_text = text.
     ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD field_id.
+
+    result = |cgui_f_{ to_lower( name ) }|.
 
   ENDMETHOD.
 
@@ -780,6 +799,8 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
             )->a( n = `text`     t = item-text
             )->a( n = `selected` v = item-bind
             )->a( n = `editable` b = xsdbool( item-read_only = abap_false ) ).
+        render_id( node = node
+                   item = item ).
         IF item-user_command IS NOT INITIAL.
           node->a( n = `select` v = client->_event( item-user_command ) ).
         ENDIF.
@@ -792,6 +813,8 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
             )->a( n = `displayFormat` v = `medium`
             )->a( n = `required`      b = item-required
             )->a( n = `editable`      b = xsdbool( item-read_only = abap_false ) ).
+        render_id( node = node
+                   item = item ).
         render_state( node = node
                       item = item ).
 
@@ -802,6 +825,8 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
             )->a( n = `displayFormat` v = `HH:mm:ss`
             )->a( n = `required`      b = item-required
             )->a( n = `editable`      b = xsdbool( item-read_only = abap_false ) ).
+        render_id( node = node
+                   item = item ).
         render_state( node = node
                       item = item ).
 
@@ -810,6 +835,8 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
             )->a( n = `value`    v = item-bind
             )->a( n = `required` b = item-required
             )->a( n = `editable` b = xsdbool( item-read_only = abap_false ) ).
+        render_id( node = node
+                   item = item ).
         render_state( node = node
                       item = item ).
         IF item-control = cs_control-number.
@@ -858,6 +885,8 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
         )->a( n = `valueHelpOnly`    b = abap_true
         )->a( n = `valueHelpRequest` v = client->_event( val = lv_event
                                                          arg = item-name ) ).
+    render_id( node = lo_input
+               item = item ).
     render_state( node = lo_input
                   item = item ).
 
@@ -876,6 +905,14 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
         )->a( n = `class`   v = `sapUiTinyMarginBegin`
         )->a( n = `press`   v = client->_event( val = cs_event-select_option
                                                 arg = item-name ) ).
+
+  ENDMETHOD.
+
+  METHOD render_id.
+
+    IF item-name IS NOT INITIAL.
+      node->a( n = `id` v = field_id( item-name ) ).
+    ENDIF.
 
   ENDMETHOD.
 
