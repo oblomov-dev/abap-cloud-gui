@@ -10,7 +10,9 @@
 "!       )->checkbox( val = p_test text = `Test run`
 "!       )->block_end( ).
 "! render( ) appends the screen to a node of an existing view, stringify( )
-"! returns it as a complete view of its own.
+"! returns it as a complete view of its own. With preview the fields are
+"! shown but not bound - any data object will do, which is how the
+"! selection screen painter shows a screen before its report exists.
 "! Two controls raise events the app answers: a select-option opens its
 "! range popup with cs_event-select_option, F4 on a field declared with
 "! value_help raises cs_event-value_request - both carry the attribute name
@@ -69,6 +71,7 @@ CLASS z2ui5_cl_cgui_selscreen DEFINITION PUBLIC FINAL CREATE PRIVATE.
       IMPORTING
         client          TYPE REF TO z2ui5_if_client
         value_help_auto TYPE abap_bool DEFAULT abap_false
+        preview         TYPE abap_bool DEFAULT abap_false
       RETURNING
         VALUE(result) TYPE REF TO z2ui5_cl_cgui_selscreen.
 
@@ -262,6 +265,7 @@ CLASS z2ui5_cl_cgui_selscreen DEFINITION PUBLIC FINAL CREATE PRIVATE.
     DATA client  TYPE REF TO z2ui5_if_client.
     DATA mt_item TYPE ty_t_item.
     DATA mv_value_help_auto TYPE abap_bool.
+    DATA mv_preview         TYPE abap_bool.
 
     METHODS item_create
       IMPORTING
@@ -340,6 +344,7 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
     result = NEW #( ).
     result->client = client.
     result->mv_value_help_auto = value_help_auto.
+    result->mv_preview = preview.
 
   ENDMETHOD.
 
@@ -433,7 +438,9 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
     DATA ls_item TYPE ty_s_item.
 
     ls_item-kind       = cs_kind-select.
-    ls_item-name       = name_get( val ).
+    IF mv_preview = abap_false.
+      ls_item-name = name_get( val ).
+    ENDIF.
     ls_item-required   = obligatory.
     ls_item-modif_id   = modif_id.
     ls_item-no_display = no_display.
@@ -443,7 +450,7 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
       ls_item-value_help = value_help_check( val ).
     ENDIF.
 
-    IF ls_item-name IS INITIAL.
+    IF ls_item-name IS INITIAL AND mv_preview = abap_false.
       RAISE EXCEPTION TYPE z2ui5_cx_cgui_error
         EXPORTING
           val = `SELECT_OPTION_NOT_AN_ATTRIBUTE - pass a PUBLIC attribute of the app`.
@@ -549,8 +556,13 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
   METHOD item_create.
 
     result-kind = kind.
-    result-name = name_get( val ).
-    result-bind = client->_bind( val ).
+    IF mv_preview = abap_false.
+      result-name = name_get( val ).
+      result-bind = client->_bind( val ).
+    ELSEIF z2ui5_cl_cgui_context=>rtti_check_boolean( val ) = abap_true.
+      " a preview shows a flag as it is - every other field empty
+      result-bind = COND #( WHEN val = abap_true THEN `true` ELSE `false` ).
+    ENDIF.
 
     result-text = text.
     IF result-text IS INITIAL.

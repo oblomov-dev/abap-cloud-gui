@@ -51,6 +51,7 @@ CLASS ltcl_test DEFINITION FINAL FOR TESTING
     METHODS checkbox_user_command FOR TESTING.
     METHODS value_help_auto FOR TESTING.
     METHODS select_option_without_help FOR TESTING.
+    METHODS preview FOR TESTING.
 
 ENDCLASS.
 
@@ -308,6 +309,31 @@ CLASS ltcl_test IMPLEMENTATION.
                                          exp = `*CGUI_VALUE_REQUEST*` ).
     cl_abap_unit_assert=>assert_char_np( act = lv_view
                                          exp = `*Multiple selection*` ).
+
+  ENDMETHOD.
+
+  METHOD preview.
+
+    " no attribute, nothing bound - a flag shows its value
+    DATA lv_flag TYPE abap_bool VALUE abap_true.
+    DATA lv_text TYPE c LENGTH 10.
+    DATA lt_range TYPE RANGE OF i.
+
+    DATA(lo_screen) = z2ui5_cl_cgui_selscreen=>factory( client  = mo_client
+                                                        preview = abap_true ).
+    lo_screen->radiobutton( lv_flag
+        )->parameter( val  = lv_text
+                      text = `Local`
+        )->select_option( val  = lt_range
+                          text = `Range` ).
+
+    DATA(lv_view) = lo_screen->stringify( ).
+    cl_abap_unit_assert=>assert_char_cp( act = lv_view
+                                         exp = `*<RadioButton*selected="true"*` ).
+    cl_abap_unit_assert=>assert_char_cp( act = lv_view
+                                         exp = `*<Label text="Range"*` ).
+    cl_abap_unit_assert=>assert_char_np( act = lv_view
+                                         exp = `*{/*` ).
 
   ENDMETHOD.
 

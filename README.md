@@ -85,6 +85,7 @@ is a complete report.
 | `z2ui5_cl_cgui_list` | `WRITE`, `NEW-LINE`, `SKIP`, `ULINE`, `NEW-PAGE`, `FORMAT COLOR`, `HOTSPOT`, `HIDE`, `AS CHECKBOX`, `AS ICON` |
 | `z2ui5_cl_cgui_alv` | `CL_SALV_TABLE` — columns and headers from RTTI/DDIC, sort, filter, double click |
 | `z2ui5_cl_cgui_variant` | selection variants — get, save, delete, start with a variant |
+| `z2ui5_cl_cgui_painter` | the selection screen painter (SE51 for selection screens) — fill in the elements, see the preview, take the generated report class |
 | `z2ui5_cl_cgui_context` | helpers — among them `range_check( )`, the `IN` of a select-option for internal tables |
 
 All views are built with `z2ui5_cl_ui5_view_builder`. The selection screen,
@@ -202,6 +203,26 @@ they belong to the browser: another device or browser starts without them.
 | `z2ui5_cl_cgui_sample_06` | a dynamic selection screen — `MODIF ID`, `USER-COMMAND`, `LOOP AT SCREEN`, read-only and password fields, `NO-DISPLAY`, `AT SELECTION-SCREEN ON field` |
 | `z2ui5_cl_cgui_sample_07` | value helps — standard F4 from domain fixed values and value table, own F4 for a parameter and a select-option |
 
+## Selection screen painter
+
+Start `z2ui5_cl_cgui_painter` (`?app_start=z2ui5_cl_cgui_painter`) and
+build the selection screen of a new report without writing it first:
+
+- **Elements** — one row per element: blocks and lines, parameters with
+  their type (`c LENGTH 10`, `d`, `i`, a DDIC type), select-options,
+  checkboxes, radio buttons, comments and push buttons, with text,
+  `OBLIGATORY`, F4, radio group or button event, `MODIF ID`,
+  `USER-COMMAND` and `NO-DISPLAY`. Rows move up and down; **Sample**
+  loads a complete screen to start from.
+- **Preview** — the screen as the report will show it, drawn by the same
+  `z2ui5_cl_cgui_selscreen`, DDIC labels and F4 included.
+- **Code** — the report class to copy into the system: the fields as
+  PUBLIC attributes, `selection_screen( )` in the layout of the samples,
+  and `at_selection_screen_output( )`, `start_of_selection( )` and
+  `at_user_command( )` as far as the elements call for them. Names, types
+  and the nesting of blocks and lines are checked first, and every problem
+  is listed with its line.
+
 ## Compatibility
 
 - **ABAP Cloud** and **Standard ABAP**; **NW 7.02** through a downport — the
@@ -254,6 +275,8 @@ Known limitations:
 - [x] Phase 7 — selection variants: get, save as, delete, start with a
       variant from the URL or `set_variant( )`, kept in the browser's local
       storage
+- [x] Phase 8 — selection screen painter: elements in a table, live
+      preview, the generated report class with a check of the design
 
 **Next**
 
@@ -267,8 +290,8 @@ Selection screen
 - [ ] Selection variants on the server: shared and protected variants,
       a pluggable store beside the browser's local storage, dynamic date
       values (today, start of month)
-- [ ] Selection screen painter: build a selection screen visually and
-      generate the `selection_screen( )` method
+- [ ] Selection screen painter: drag and drop, read an existing
+      `selection_screen( )` back in, keep the design in the browser
 
 Messages and logging
 

@@ -15,6 +15,7 @@ list, ALV grid, messages. Language of code, comments, commits and docs:
 |---|---|
 | `src/01` | the framework: `z2ui5_cl_cgui_report` (report runtime), `_selscreen`, `_list`, `_alv`, `_variant` (selection variants), `_context` (RTTI and conversion helpers), `z2ui5_cx_cgui_error` |
 | `src/02` | samples `z2ui5_cl_cgui_sample_01` … `_07` |
+| `src/03` | tools: the selection screen painter `z2ui5_cl_cgui_painter` and its code generator `_painter_code` |
 | `.github/abaplint` | the Cloud and 7.02 gate configs; `abaplint.jsonc` at the root is the v750 inner loop |
 
 Naming: every class is `Z2UI5_CL_CGUI_*` / `Z2UI5_CX_CGUI_*` (abaplint
@@ -99,6 +100,12 @@ is the floor — `npm run check:abap2ui5` (the abap2UI5-linter).
   empty VALUE deletes the key. Keep bound and stored value equal after a
   write, or the control reports again on the next render. A variant in the
   URL is read after `initialization( )`, so it wins over `set_variant( )`.
+- **The painter's code must compile as it is.** A change to
+  `z2ui5_cl_cgui_painter_code` is checked by generating a class (the
+  painter's Sample, plus a select-option with `c LENGTH`) and running the
+  three abaplint gates over it as a class of `src/02`, not only by the unit
+  tests. The preview uses `z2ui5_cl_cgui_selscreen` with `preview`: nothing
+  is bound, a flag renders its value literally.
 - **The report dispatcher is one IF/ELSEIF chain** over `check_on_init`,
   `check_on_navigated`, `check_on_event`, and every branch that shows the
   screen calls `view_display( )` — unless a popup app was called in the same
