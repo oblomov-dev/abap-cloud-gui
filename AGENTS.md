@@ -14,7 +14,7 @@ list, ALV grid, messages. Language of code, comments, commits and docs:
 | Path | Content |
 |---|---|
 | `src/01` | the framework: `z2ui5_cl_cgui_report` (report runtime), `_selscreen`, `_list`, `_alv`, `_context` (RTTI and conversion helpers), `z2ui5_cx_cgui_error` |
-| `src/02` | samples `z2ui5_cl_cgui_sample_01` … `_06` |
+| `src/02` | samples `z2ui5_cl_cgui_sample_01` … `_07` |
 | `.github/abaplint` | the Cloud and 7.02 gate configs; `abaplint.jsonc` at the root is the v750 inner loop |
 
 Naming: every class is `Z2UI5_CL_CGUI_*` / `Z2UI5_CX_CGUI_*` (abaplint
@@ -65,6 +65,17 @@ is the floor — `npm run check:abap2ui5` (the abap2UI5-linter).
   two selected buttons. The user command of a group is wired only to the
   buttons not selected at render time; the screen is rendered anew after
   every roundtrip, so the wiring follows the selection.
+- **The standard F4 reads the DDIC dynamically.** `GET_DDIC_FIXED_VALUES`
+  is called with a local copy of `DDFIXVALUE` (as abap2UI5 core does), and
+  the value table goes through `DFIES` / `DDFIELDS`, which raise on ABAP
+  Cloud - every lookup sits in a `TRY` and an error means "no F4". In tests
+  use `XSDBOOLEAN`: it is the one data element with fixed values that both
+  the abaplint API set and the transpiled runtime know.
+- **`z2ui5_cl_popup_to_select` preselects through `ZZSELKZ`.** It copies the
+  rows with `MOVE-CORRESPONDING` into its own table, whose `ZZSELKZ` is bound
+  to `selected` - so a table that brings a `ZZSELKZ` comes up checked. The
+  popup heads a column with the DDIC label of its type, and with `STRING`
+  for a string: give value lists character types.
 - **The report dispatcher is one IF/ELSEIF chain** over `check_on_init`,
   `check_on_navigated`, `check_on_event`, and every branch that shows the
   screen calls `view_display( )` — unless a popup app was called in the same

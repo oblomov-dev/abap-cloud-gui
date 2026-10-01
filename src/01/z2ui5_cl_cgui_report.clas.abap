@@ -16,7 +16,9 @@
 "!   at_user_command       a button of the selection screen, a checkbox or
 "!                         radio button with user_command, or a confirmed
 "!                         popup_to_confirm( )
-"!   at_value_request      F4 on a parameter declared with value_help
+"!   at_value_request      F4 on a field - the default shows the standard F4
+"!                         of its DDIC type: domain fixed values or value
+"!                         table
 "! The runtime shows the selection screen, runs the blocks on Execute (F8),
 "! shows the output and goes back on Back (F3). Messages follow the classic
 "! semantics: S as a toast, I and W as a box, E as a box that stops the run.
@@ -45,6 +47,15 @@ CLASS z2ui5_cl_cgui_report DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
         field TYPE string,
       END OF ty_s_cgui_msg.
     TYPES ty_t_cgui_msg TYPE STANDARD TABLE OF ty_s_cgui_msg WITH EMPTY KEY.
+
+    TYPES:
+      " character types: the popup heads a column with the DDIC label of its
+      " type, the component name when it has none - and STRING for a string
+      BEGIN OF ty_s_cgui_value,
+        value TYPE c LENGTH 10,
+        text  TYPE c LENGTH 60,
+      END OF ty_s_cgui_value.
+    TYPES ty_t_cgui_value TYPE STANDARD TABLE OF ty_s_cgui_value WITH EMPTY KEY.
 
     DATA client TYPE REF TO z2ui5_if_client.
 
@@ -83,8 +94,11 @@ CLASS z2ui5_cl_cgui_report DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
       IMPORTING
         ucomm TYPE string.
 
-    "! field is the name of the parameter - answer with value_help_popup( )
-    "! or by setting the attribute directly
+    "! AT SELECTION-SCREEN ON VALUE-REQUEST - F4 on a field, field is its
+    "! attribute name. Answer with value_help_popup( ) or by setting the
+    "! attribute directly. This implementation is the standard F4: the
+    "! fixed values of the domain, else its value table (on premise) - call
+    "! super->at_value_request( field ) for the fields you do not answer
     METHODS at_value_request
       IMPORTING
         field TYPE string.
@@ -132,7 +146,8 @@ CLASS z2ui5_cl_cgui_report DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
 
     "! F4 help for the field of at_value_request( ): the user picks a row of
     "! tab, and its component col (the first one when empty) is written
-    "! into the field
+    "! into the field. For a select-option the user picks any number of
+    "! rows, which replace its lines as I EQ
     METHODS value_help_popup
       IMPORTING
         tab   TYPE STANDARD TABLE
@@ -202,6 +217,26 @@ CLASS z2ui5_cl_cgui_report DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
       IMPORTING
         field TYPE string
         col   TYPE string.
+
+    METHODS value_help_ddic
+      IMPORTING
+        field TYPE string.
+
+    "! tab with a column ZZSELKZ, set for every row whose col is a line
+    "! I EQ of range - the selection the popup starts with
+    METHODS value_help_preselect
+      IMPORTING
+        tab           TYPE STANDARD TABLE
+        col           TYPE string
+        range         TYPE STANDARD TABLE
+      RETURNING
+        VALUE(result) TYPE REF TO data.
+
+    METHODS value_help_title
+      IMPORTING
+        field         TYPE string
+      RETURNING
+        VALUE(result) TYPE string.
 
     METHODS attri_assign
       IMPORTING
@@ -282,7 +317,142 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
   METHOD at_user_command ##NEEDED.
   ENDMETHOD.
 
-  METHOD at_value_request ##NEEDED.
+  METHOD at_value_request.
+
+    value_help_ddic( field ).
+
+  ENDMETHOD.
+
+  METHOD value_help_ddic.
+
+    DATA lt_value TYPE ty_t_cgui_value.
+    DATA lr_tab   TYPE REF TO data.
+    DATA lt_comp  TYPE cl_abap_structdescr=>component_table.
+    FIELD-SYMBOLS <val> TYPE any.
+    FIELD-SYMBOLS <tab> TYPE STANDARD TABLE.
+
+    DATA(lr_val) = attri_assign( field ).
+    IF lr_val IS NOT BOUND.
+      RETURN.
+    ENDIF.
+    ASSIGN lr_val->* TO <val>.
+    DATA(lo_descr) = z2ui5_cl_cgui_context=>rtti_get_value_descr( <val> ).
+
+    DATA(lt_fix) = z2ui5_cl_cgui_context=>rtti_get_fixed_values( lo_descr ).
+    IF lt_fix IS NOT INITIAL.
+      LOOP AT lt_fix REFERENCE INTO DATA(lr_fix).
+        INSERT VALUE #( value = lr_fix->low
+                        text  = lr_fix->text ) INTO TABLE lt_value.
+      ENDLOOP.
+      value_help_popup( tab   = lt_value
+                        col   = `VALUE`
+                        title = value_help_title( field ) ).
+      RETURN.
+    ENDIF.
+
+    DATA(ls_table) = z2ui5_cl_cgui_context=>rtti_get_value_table( lo_descr ).
+    IF ls_table-table IS NOT INITIAL.
+      TRY.
+          DATA(lo_struct) = CAST cl_abap_structdescr( cl_abap_typedescr=>describe_by_name( ls_table-table ) ).
+          LOOP AT lo_struct->get_components( ) REFERENCE INTO DATA(lr_comp).
+            READ TABLE ls_table-fields WITH KEY table_line = lr_comp->name TRANSPORTING NO FIELDS.
+            IF sy-subrc = 0.
+              INSERT lr_comp->* INTO TABLE lt_comp.
+            ENDIF.
+          ENDLOOP.
+          DATA(lo_tab) = cl_abap_tabledescr=>create( cl_abap_structdescr=>create( lt_comp ) ).
+          CREATE DATA lr_tab TYPE HANDLE lo_tab.
+          ASSIGN lr_tab->* TO <tab>.
+          SELECT (ls_table-fields) FROM (ls_table-table) INTO CORRESPONDING FIELDS OF TABLE @<tab> UP TO 500 ROWS.
+        CATCH cx_root.
+          UNASSIGN <tab>.
+      ENDTRY.
+      IF <tab> IS ASSIGNED AND <tab> IS NOT INITIAL.
+        value_help_popup( tab   = <tab>
+                          col   = ls_table-field
+                          title = value_help_title( field ) ).
+        RETURN.
+      ENDIF.
+    ENDIF.
+
+    message( `No input help is available` ).
+
+  ENDMETHOD.
+
+  METHOD value_help_preselect.
+
+    DATA lt_comp  TYPE cl_abap_structdescr=>component_table.
+    DATA lv_flag  TYPE abap_bool.
+    DATA lr_row   TYPE REF TO data.
+    FIELD-SYMBOLS <tab>   TYPE STANDARD TABLE.
+    FIELD-SYMBOLS <src>   TYPE any.
+    FIELD-SYMBOLS <row>   TYPE any.
+    FIELD-SYMBOLS <value> TYPE any.
+    FIELD-SYMBOLS <selkz> TYPE any.
+    FIELD-SYMBOLS <line>  TYPE any.
+    FIELD-SYMBOLS <comp>  TYPE any.
+
+    TRY.
+        DATA(lo_table) = CAST cl_abap_tabledescr( cl_abap_typedescr=>describe_by_data( tab ) ).
+        DATA(lo_line) = CAST cl_abap_structdescr( lo_table->get_table_line_type( ) ).
+        lt_comp = lo_line->get_components( ).
+        READ TABLE lt_comp WITH KEY name = `ZZSELKZ` TRANSPORTING NO FIELDS.
+        IF sy-subrc = 0.
+          RETURN.
+        ENDIF.
+        INSERT VALUE #( name = `ZZSELKZ`
+                        type = CAST #( cl_abap_typedescr=>describe_by_data( lv_flag ) ) ) INTO TABLE lt_comp.
+
+        DATA(lo_new) = cl_abap_tabledescr=>create( cl_abap_structdescr=>create( lt_comp ) ).
+        CREATE DATA result TYPE HANDLE lo_new.
+        ASSIGN result->* TO <tab>.
+      CATCH cx_root.
+        CLEAR result.
+        RETURN.
+    ENDTRY.
+
+    LOOP AT tab ASSIGNING <src>.
+      CREATE DATA lr_row LIKE LINE OF <tab>.
+      ASSIGN lr_row->* TO <row>.
+      MOVE-CORRESPONDING <src> TO <row>.
+
+      UNASSIGN <value>.
+      IF col IS INITIAL.
+        ASSIGN COMPONENT 1 OF STRUCTURE <row> TO <value>.
+      ELSE.
+        ASSIGN COMPONENT col OF STRUCTURE <row> TO <value>.
+      ENDIF.
+      IF <value> IS ASSIGNED.
+        LOOP AT range ASSIGNING <line>.
+          ASSIGN COMPONENT `SIGN` OF STRUCTURE <line> TO <comp>.
+          IF <comp> <> `I`.
+            CONTINUE.
+          ENDIF.
+          ASSIGN COMPONENT `OPTION` OF STRUCTURE <line> TO <comp>.
+          IF <comp> <> `EQ`.
+            CONTINUE.
+          ENDIF.
+          ASSIGN COMPONENT `LOW` OF STRUCTURE <line> TO <comp>.
+          IF <comp> = <value>.
+            ASSIGN COMPONENT `ZZSELKZ` OF STRUCTURE <row> TO <selkz>.
+            <selkz> = abap_true.
+            EXIT.
+          ENDIF.
+        ENDLOOP.
+      ENDIF.
+
+      INSERT <row> INTO TABLE <tab>.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD value_help_title.
+
+    READ TABLE mt_cgui_field REFERENCE INTO DATA(lr_field) WITH KEY name = field.
+    IF sy-subrc = 0.
+      result = lr_field->text.
+    ENDIF.
+
   ENDMETHOD.
 
   METHOD on_event.
@@ -476,9 +646,14 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
   METHOD on_f4_result.
 
     FIELD-SYMBOLS <row>   TYPE any.
+    FIELD-SYMBOLS <rows>  TYPE STANDARD TABLE.
     FIELD-SYMBOLS <value> TYPE any.
     FIELD-SYMBOLS <field> TYPE any.
+    FIELD-SYMBOLS <range> TYPE STANDARD TABLE.
+    FIELD-SYMBOLS <line>  TYPE any.
+    FIELD-SYMBOLS <comp>  TYPE any.
     DATA lo_popup TYPE REF TO z2ui5_cl_popup_to_select.
+    DATA lr_line  TYPE REF TO data.
 
     TRY.
         lo_popup ?= client->get_app_prev( ).
@@ -487,17 +662,7 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
     ENDTRY.
 
     DATA(ls_result) = lo_popup->result( ).
-    IF ls_result-check_confirmed = abap_false OR ls_result-row IS NOT BOUND.
-      RETURN.
-    ENDIF.
-    ASSIGN ls_result-row->* TO <row>.
-
-    IF col IS INITIAL.
-      ASSIGN COMPONENT 1 OF STRUCTURE <row> TO <value>.
-    ELSE.
-      ASSIGN COMPONENT col OF STRUCTURE <row> TO <value>.
-    ENDIF.
-    IF <value> IS NOT ASSIGNED.
+    IF ls_result-check_confirmed = abap_false.
       RETURN.
     ENDIF.
 
@@ -505,8 +670,54 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
     IF lr_field IS NOT BOUND.
       RETURN.
     ENDIF.
-    ASSIGN lr_field->* TO <field>.
-    <field> = <value>.
+
+    IF cl_abap_typedescr=>describe_by_data_ref( lr_field )->kind <> cl_abap_typedescr=>kind_table.
+      IF ls_result-row IS NOT BOUND.
+        RETURN.
+      ENDIF.
+      ASSIGN ls_result-row->* TO <row>.
+      IF col IS INITIAL.
+        ASSIGN COMPONENT 1 OF STRUCTURE <row> TO <value>.
+      ELSE.
+        ASSIGN COMPONENT col OF STRUCTURE <row> TO <value>.
+      ENDIF.
+      IF <value> IS NOT ASSIGNED.
+        RETURN.
+      ENDIF.
+      ASSIGN lr_field->* TO <field>.
+      <field> = <value>.
+      RETURN.
+    ENDIF.
+
+    " a select-option - every row picked becomes a line I EQ
+    IF ls_result-table IS NOT BOUND.
+      RETURN.
+    ENDIF.
+    ASSIGN ls_result-table->* TO <rows>.
+    ASSIGN lr_field->* TO <range>.
+    CLEAR <range>.
+
+    LOOP AT <rows> ASSIGNING <row>.
+      UNASSIGN <value>.
+      IF col IS INITIAL.
+        ASSIGN COMPONENT 1 OF STRUCTURE <row> TO <value>.
+      ELSE.
+        ASSIGN COMPONENT col OF STRUCTURE <row> TO <value>.
+      ENDIF.
+      IF <value> IS NOT ASSIGNED.
+        CONTINUE.
+      ENDIF.
+
+      CREATE DATA lr_line LIKE LINE OF <range>.
+      ASSIGN lr_line->* TO <line>.
+      ASSIGN COMPONENT `SIGN` OF STRUCTURE <line> TO <comp>.
+      <comp> = `I`.
+      ASSIGN COMPONENT `OPTION` OF STRUCTURE <line> TO <comp>.
+      <comp> = `EQ`.
+      ASSIGN COMPONENT `LOW` OF STRUCTURE <line> TO <comp>.
+      <comp> = <value>.
+      INSERT <line> INTO TABLE <range>.
+    ENDLOOP.
 
   ENDMETHOD.
 
@@ -599,12 +810,36 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
       RETURN.
     ENDIF.
 
+    FIELD-SYMBOLS <range> TYPE STANDARD TABLE.
+    FIELD-SYMBOLS <tab>   TYPE STANDARD TABLE.
+    DATA lr_tab TYPE REF TO data.
+
+    DATA(lr_field) = attri_assign( mv_cgui_value_field ).
+    IF lr_field IS NOT BOUND.
+      RETURN.
+    ENDIF.
+    DATA(lv_multi) = xsdbool( cl_abap_typedescr=>describe_by_data_ref( lr_field )->kind = cl_abap_typedescr=>kind_table ).
+
     mv_cgui_pending_field = mv_cgui_value_field.
     mv_cgui_pending_kind = cs_pending-f4.
     mv_cgui_pending_col = to_upper( col ).
     mv_cgui_nav = abap_true.
-    client->nav_app_call( z2ui5_cl_popup_to_select=>factory( i_tab   = tab
-                                                             i_title = title ) ).
+
+    IF lv_multi = abap_true.
+      ASSIGN lr_field->* TO <range>.
+      lr_tab = value_help_preselect( tab   = tab
+                                     col   = mv_cgui_pending_col
+                                     range = <range> ).
+    ENDIF.
+    IF lr_tab IS BOUND.
+      ASSIGN lr_tab->* TO <tab>.
+    ELSE.
+      ASSIGN tab TO <tab>.
+    ENDIF.
+
+    client->nav_app_call( z2ui5_cl_popup_to_select=>factory( i_tab         = <tab>
+                                                             i_title       = title
+                                                             i_multiselect = lv_multi ) ).
 
   ENDMETHOD.
 
@@ -644,7 +879,8 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
       lv_button_icon = `sap-icon://nav-back`.
       lv_button_ucomm = cs_ucomm-back.
     ELSE.
-      DATA(screen) = z2ui5_cl_cgui_selscreen=>factory( client ).
+      DATA(screen) = z2ui5_cl_cgui_selscreen=>factory( client          = client
+                                                       value_help_auto = abap_true ).
       selection_screen( screen ).
       at_selection_screen_output( screen ).
       value_state_set( screen ).

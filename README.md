@@ -81,7 +81,7 @@ is a complete report.
 | Class | Classic counterpart |
 |---|---|
 | `z2ui5_cl_cgui_report` | the report itself — `INITIALIZATION`, `AT SELECTION-SCREEN OUTPUT`, `AT SELECTION-SCREEN ON field`, `AT SELECTION-SCREEN`, `START-OF-SELECTION`, `AT LINE-SELECTION`, `AT USER-COMMAND`, `AT SELECTION-SCREEN ON VALUE-REQUEST`, `MESSAGE`, `POPUP_TO_CONFIRM` |
-| `z2ui5_cl_cgui_selscreen` | `PARAMETERS`, `SELECT-OPTIONS`, `SELECTION-SCREEN BEGIN OF BLOCK / LINE`, `COMMENT`, `PUSHBUTTON`, `AS CHECKBOX`, `RADIOBUTTON GROUP`, `OBLIGATORY`, `NO-DISPLAY`, `MODIF ID`, `USER-COMMAND`, `LOOP AT SCREEN` / `MODIFY SCREEN` |
+| `z2ui5_cl_cgui_selscreen` | `PARAMETERS`, `SELECT-OPTIONS`, `SELECTION-SCREEN BEGIN OF BLOCK / LINE`, `COMMENT`, `PUSHBUTTON`, `AS CHECKBOX`, `RADIOBUTTON GROUP`, `OBLIGATORY`, `NO-DISPLAY`, `MODIF ID`, `USER-COMMAND`, `LOOP AT SCREEN` / `MODIFY SCREEN`, F4 and the multiple selection of a select-option |
 | `z2ui5_cl_cgui_list` | `WRITE`, `NEW-LINE`, `SKIP`, `ULINE`, `NEW-PAGE`, `FORMAT COLOR`, `HOTSPOT`, `HIDE`, `AS CHECKBOX`, `AS ICON` |
 | `z2ui5_cl_cgui_alv` | `CL_SALV_TABLE` — columns and headers from RTTI/DDIC, sort, filter, double click |
 | `z2ui5_cl_cgui_context` | helpers — among them `range_check( )`, the `IN` of a select-option for internal tables |
@@ -106,7 +106,7 @@ Inherit from `z2ui5_cl_cgui_report`, declare the selection screen fields as
 | `start_of_selection` | read the data, output it with `write( )` or `alv( )` |
 | `at_line_selection( row hide )` | a hotspot of the list or a row of the ALV was clicked |
 | `at_user_command( ucomm )` | a button of the selection screen, a checkbox or radio button group with `user_command`, or a confirmed `popup_to_confirm( )` |
-| `at_value_request( field )` | F4 on a parameter declared with `value_help` — answer with `value_help_popup( )` |
+| `at_value_request( field )` | F4 on a field — the default is the standard F4 of its DDIC type; redefine it for your own and call `super->` for the rest |
 
 Messages follow the classic semantics: `S` as a toast, `I` and `W` as a box,
 `E` as a box that stops the run. Fields declared `obligatory` are checked
@@ -147,6 +147,29 @@ the field with its label (a block with no field left disappears), `input`
 makes it read-only, `required` obligatory, `invisible` masks the input like a
 password.
 
+### Value helps
+
+Every parameter and select-option whose DDIC type has a standard F4 gets it
+without code: the **fixed values of the domain**, or — on premise — its
+**value table**. Fields declared with `value_help = abap_true` get F4 too and
+are answered in `at_value_request( )`, with any table:
+
+```abap
+METHOD at_value_request.
+  CASE field.
+    WHEN `P_CARRID` OR `S_CARRID`.
+      value_help_popup( tab = lt_carrier col = `CARRID` title = `Airlines` ).
+    WHEN OTHERS.
+      super->at_value_request( field ).   " the standard F4
+  ENDCASE.
+ENDMETHOD.
+```
+
+On a select-option F4 picks any number of values, which become lines
+`I EQ` — the ones already selected come up checked. A button beside the
+field opens the range popup, the classic multiple selection, for every
+other condition.
+
 ## Samples
 
 | Class | Shows |
@@ -157,6 +180,7 @@ password.
 | `z2ui5_cl_cgui_sample_04` | the smallest report — hello world |
 | `z2ui5_cl_cgui_sample_05` | a complete report — select-option, F4 help, radio buttons for ALV or list, drilldown, reset with a confirmation popup |
 | `z2ui5_cl_cgui_sample_06` | a dynamic selection screen — `MODIF ID`, `USER-COMMAND`, `LOOP AT SCREEN`, read-only and password fields, `NO-DISPLAY`, `AT SELECTION-SCREEN ON field` |
+| `z2ui5_cl_cgui_sample_07` | value helps — standard F4 from domain fixed values and value table, own F4 for a parameter and a select-option |
 
 ## Compatibility
 
@@ -175,6 +199,8 @@ Known limitations:
   `I CP` — use `z2ui5_cl_cgui_context=>range_check( )` for internal tables if
   the report must also run there. On an SAP system `IN` and
   `SELECT ... WHERE ... IN` work as usual.
+- Value tables are read on premise only — on ABAP Cloud the DDIC is not
+  read, and the standard F4 is the domain's fixed values.
 - `alv( )` binds a PUBLIC attribute directly; any other table is copied into
   a data reference, which the draft has to rebuild with RTTI on every
   roundtrip.
@@ -199,14 +225,18 @@ Known limitations:
       invisible), `MODIF ID`, `USER-COMMAND` at checkboxes and radio button
       groups, `NO-DISPLAY`, `AT SELECTION-SCREEN ON field` and messages with
       the value state on their field; unit tests for the selection screen
+- [x] Phase 6 — value helps: standard F4 from domain fixed values (ABAP
+      Cloud and on premise) and value tables (on premise), automatic for
+      every DDIC-typed field; F4 with multiple selection on select-options,
+      preselected, the range popup on a button of its own
 
 **Next**
 
 Selection screen
 
-- [ ] Value helps: automatic F4 from domain fixed values, check tables and
-      CDS value helps, shown in a popup; F4 inside the range popup of a
-      select-option
+- [ ] Value helps: CDS value helps (`@Consumption.valueHelpDefinition`),
+      text tables beside value tables, search helps, F4 inside the range
+      popup of a select-option
 - [ ] `AT SELECTION-SCREEN ON BLOCK`, `ON RADIOBUTTON GROUP`, `AS LISTBOX`
 - [ ] `MEMORY ID`
 - [ ] Selection variants: save, load, start a report with a variant

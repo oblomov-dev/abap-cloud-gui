@@ -12,9 +12,12 @@
 "! render( ) appends the screen to a node of an existing view, stringify( )
 "! returns it as a complete view of its own.
 "! Two controls raise events the app answers: a select-option opens its
-"! value help with cs_event-select_option, a parameter with value_help
-"! with cs_event-value_request - both carry the attribute name as first
-"! event argument. z2ui5_cl_cgui_report handles both for you.
+"! range popup with cs_event-select_option, F4 on a field declared with
+"! value_help raises cs_event-value_request - both carry the attribute name
+"! as first event argument. A select-option with value_help gets a button
+"! of its own for the range popup. z2ui5_cl_cgui_report handles both for
+"! you, and declares value_help_auto: every field whose DDIC type has fixed
+"! values or a value table gets F4 without asking.
 "! A checkbox or a radio button group declared with user_command raises
 "! that event as soon as the user changes it - the classic USER-COMMAND.
 "! The screen can be changed before it is rendered, the classic
@@ -59,9 +62,13 @@ CLASS z2ui5_cl_cgui_selscreen DEFINITION PUBLIC FINAL CREATE PRIVATE.
       END OF ty_s_screen.
     TYPES ty_t_screen TYPE STANDARD TABLE OF ty_s_screen WITH EMPTY KEY.
 
+    "! value_help_auto - F4 for every field whose DDIC type has a standard
+    "! F4 (domain fixed values, value table); the caller answers
+    "! cs_event-value_request for them
     CLASS-METHODS factory
       IMPORTING
-        client        TYPE REF TO z2ui5_if_client
+        client          TYPE REF TO z2ui5_if_client
+        value_help_auto TYPE abap_bool DEFAULT abap_false
       RETURNING
         VALUE(result) TYPE REF TO z2ui5_cl_cgui_selscreen.
 
@@ -133,6 +140,7 @@ CLASS z2ui5_cl_cgui_selscreen DEFINITION PUBLIC FINAL CREATE PRIVATE.
         val           TYPE STANDARD TABLE
         text          TYPE clike     OPTIONAL
         obligatory    TYPE abap_bool DEFAULT abap_false
+        value_help    TYPE abap_bool DEFAULT abap_false
         modif_id      TYPE clike     OPTIONAL
         no_display    TYPE abap_bool DEFAULT abap_false
       RETURNING
@@ -253,6 +261,7 @@ CLASS z2ui5_cl_cgui_selscreen DEFINITION PUBLIC FINAL CREATE PRIVATE.
 
     DATA client  TYPE REF TO z2ui5_if_client.
     DATA mt_item TYPE ty_t_item.
+    DATA mv_value_help_auto TYPE abap_bool.
 
     METHODS item_create
       IMPORTING
@@ -267,6 +276,12 @@ CLASS z2ui5_cl_cgui_selscreen DEFINITION PUBLIC FINAL CREATE PRIVATE.
         val           TYPE any
       RETURNING
         VALUE(result) TYPE string.
+
+    METHODS value_help_check
+      IMPORTING
+        val           TYPE any
+      RETURNING
+        VALUE(result) TYPE abap_bool.
 
     METHODS control_by_type
       IMPORTING
@@ -324,6 +339,7 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
 
     result = NEW #( ).
     result->client = client.
+    result->mv_value_help_auto = value_help_auto.
 
   ENDMETHOD.
 
@@ -365,6 +381,10 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
     ls_item-control    = control_by_type( val ).
     ls_item-required   = obligatory.
     ls_item-value_help = value_help.
+    IF ls_item-value_help = abap_false
+        AND ( ls_item-control = cs_control-input OR ls_item-control = cs_control-number ).
+      ls_item-value_help = value_help_check( val ).
+    ENDIF.
     ls_item-modif_id   = modif_id.
     ls_item-no_display = no_display.
 
@@ -418,6 +438,10 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
     ls_item-modif_id   = modif_id.
     ls_item-no_display = no_display.
     ls_item-value      = z2ui5_cl_cgui_context=>range_to_text( val ).
+    ls_item-value_help = value_help.
+    IF ls_item-value_help = abap_false.
+      ls_item-value_help = value_help_check( val ).
+    ENDIF.
 
     IF ls_item-name IS INITIAL.
       RAISE EXCEPTION TYPE z2ui5_cx_cgui_error
@@ -535,6 +559,16 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
     IF result-text IS INITIAL.
       result-text = result-name.
     ENDIF.
+
+  ENDMETHOD.
+
+  METHOD value_help_check.
+
+    IF mv_value_help_auto = abap_false.
+      RETURN.
+    ENDIF.
+
+    result = z2ui5_cl_cgui_context=>rtti_check_value_help( z2ui5_cl_cgui_context=>rtti_get_value_descr( val ) ).
 
   ENDMETHOD.
 
@@ -786,16 +820,50 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
 
   METHOD render_select_option.
 
-    node->tag( `Input`
-        )->a( n = `value`            t = item-value
+    " without a value help F4 is the range popup; with one, F4 picks values
+    " and the button beside the field - the classic multiple selection -
+    " opens the range popup
+    DATA lv_event TYPE string VALUE cs_event-select_option.
+    DATA lo_box   TYPE REF TO z2ui5_cl_ui5_view_builder.
+    DATA lo_input TYPE REF TO z2ui5_cl_ui5_view_builder.
+
+    IF item-value_help = abap_true.
+      lv_event = cs_event-value_request.
+      " field and button share the row the form gives the field
+      lo_box = node->ele( `HBox`
+          )->a( n = `width`      v = `100%`
+          )->a( n = `alignItems` v = `Center` ).
+      lo_input = lo_box->ele( `Input` ).
+    ELSE.
+      " tag( ) stays on node - the a( ) below lands on the Input all the same
+      lo_input = node->tag( `Input` ).
+    ENDIF.
+
+    lo_input->a( n = `value`            t = item-value
         )->a( n = `required`         b = item-required
         )->a( n = `editable`         b = xsdbool( item-read_only = abap_false )
         )->a( n = `showValueHelp`    b = abap_true
         )->a( n = `valueHelpOnly`    b = abap_true
-        )->a( n = `valueHelpRequest` v = client->_event( val = cs_event-select_option
+        )->a( n = `valueHelpRequest` v = client->_event( val = lv_event
                                                          arg = item-name ) ).
-    render_state( node = node
+    render_state( node = lo_input
                   item = item ).
+
+    IF item-value_help = abap_false.
+      RETURN.
+    ENDIF.
+
+    lo_input->ele( `layoutData`
+        )->tag( `FlexItemData`
+        )->a( n = `growFactor` v = `1` ).
+
+    lo_box->tag( `Button`
+        )->a( n = `icon`    v = `sap-icon://filter`
+        )->a( n = `tooltip` v = `Multiple selection`
+        )->a( n = `enabled` b = xsdbool( item-read_only = abap_false )
+        )->a( n = `class`   v = `sapUiTinyMarginBegin`
+        )->a( n = `press`   v = client->_event( val = cs_event-select_option
+                                                arg = item-name ) ).
 
   ENDMETHOD.
 

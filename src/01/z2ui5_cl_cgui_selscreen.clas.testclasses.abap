@@ -9,6 +9,8 @@ CLASS ltcl_app DEFINITION FINAL CREATE PUBLIC.
     DATA mv_rb_a   TYPE abap_bool.
     DATA mv_rb_b   TYPE abap_bool.
     DATA mv_hidden TYPE string.
+    DATA mt_flag   TYPE RANGE OF xsdboolean.
+    DATA mt_text   TYPE RANGE OF string.
 
 ENDCLASS.
 
@@ -47,6 +49,8 @@ CLASS ltcl_test DEFINITION FINAL FOR TESTING
     METHODS value_state FOR TESTING.
     METHODS radio_group_user_command FOR TESTING.
     METHODS checkbox_user_command FOR TESTING.
+    METHODS value_help_auto FOR TESTING.
+    METHODS select_option_without_help FOR TESTING.
 
 ENDCLASS.
 
@@ -271,6 +275,39 @@ CLASS ltcl_test IMPLEMENTATION.
 
     cl_abap_unit_assert=>assert_char_cp( act = lo_screen->stringify( )
                                          exp = `*select="EVENT:FLAG"*` ).
+
+  ENDMETHOD.
+
+  METHOD value_help_auto.
+
+    " XSDBOOLEAN has fixed values: F4 picks values, a button of its own
+    " opens the range popup
+    DATA(lo_screen) = z2ui5_cl_cgui_selscreen=>factory( client          = mo_client
+                                                        value_help_auto = abap_true ).
+    lo_screen->select_option( mo_app->mt_flag ).
+
+    DATA(lv_view) = lo_screen->stringify( ).
+    cl_abap_unit_assert=>assert_char_cp( act = lv_view
+                                         exp = `*valueHelpRequest="EVENT:CGUI_VALUE_REQUEST"*` ).
+    cl_abap_unit_assert=>assert_char_cp( act = lv_view
+                                         exp = `*tooltip="Multiple selection" enabled="true" class="sapUiTinyMarginBegin" press="EVENT:CGUI_SELECT_OPTION"*` ).
+
+  ENDMETHOD.
+
+  METHOD select_option_without_help.
+
+    " no fixed values - and without value_help_auto none are looked up
+    DATA(lo_screen) = z2ui5_cl_cgui_selscreen=>factory( client          = mo_client
+                                                        value_help_auto = abap_true ).
+    lo_screen->select_option( mo_app->mt_text ).
+    DATA(lo_plain) = z2ui5_cl_cgui_selscreen=>factory( mo_client ).
+    lo_plain->select_option( mo_app->mt_flag ).
+
+    DATA(lv_view) = lo_screen->stringify( ) && lo_plain->stringify( ).
+    cl_abap_unit_assert=>assert_char_np( act = lv_view
+                                         exp = `*CGUI_VALUE_REQUEST*` ).
+    cl_abap_unit_assert=>assert_char_np( act = lv_view
+                                         exp = `*Multiple selection*` ).
 
   ENDMETHOD.
 
