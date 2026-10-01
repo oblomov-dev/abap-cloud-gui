@@ -34,3 +34,4 @@ jobs:
           .deps/popups/src/z2ui5_cl_popup_get_range.clas.abap
           .deps/popups/src/z2ui5_cl_popup_to_confirm.clas.abap
           .deps/popups/src/z2ui5_cl_popup_to_select.clas.abap
+          .deps/popups/src/z2ui5_cl_popup_input_val.clas.abap

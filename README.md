@@ -84,6 +84,7 @@ is a complete report.
 | `z2ui5_cl_cgui_selscreen` | `PARAMETERS`, `SELECT-OPTIONS`, `SELECTION-SCREEN BEGIN OF BLOCK / LINE`, `COMMENT`, `PUSHBUTTON`, `AS CHECKBOX`, `RADIOBUTTON GROUP`, `OBLIGATORY`, `NO-DISPLAY`, `MODIF ID`, `USER-COMMAND`, `LOOP AT SCREEN` / `MODIFY SCREEN`, F4 and the multiple selection of a select-option |
 | `z2ui5_cl_cgui_list` | `WRITE`, `NEW-LINE`, `SKIP`, `ULINE`, `NEW-PAGE`, `FORMAT COLOR`, `HOTSPOT`, `HIDE`, `AS CHECKBOX`, `AS ICON` |
 | `z2ui5_cl_cgui_alv` | `CL_SALV_TABLE` — columns and headers from RTTI/DDIC, sort, filter, double click |
+| `z2ui5_cl_cgui_variant` | selection variants — get, save, delete, start with a variant |
 | `z2ui5_cl_cgui_context` | helpers — among them `range_check( )`, the `IN` of a select-option for internal tables |
 
 All views are built with `z2ui5_cl_ui5_view_builder`. The selection screen,
@@ -170,6 +171,25 @@ On a select-option F4 picks any number of values, which become lines
 field opens the range popup, the classic multiple selection, for every
 other condition.
 
+### Selection variants
+
+The footer of every selection screen has **Get Variant**, **Save as
+Variant** and **Delete Variant**: a variant keeps every field of the screen
+— parameters, select-options with all their lines, hidden `NO-DISPLAY`
+fields — under a name, and the list of variants shows what each one holds.
+A report starts with a variant through the URL (`&variant=Q1`) or from
+`initialization( )`:
+
+```abap
+METHOD initialization.
+  set_variant( `DEFAULT` ).   " if the user saved one - silently skipped if not
+ENDMETHOD.
+```
+
+The variants are kept in the browser's local storage, one entry per report
+class — nothing to install, on ABAP Cloud as on premise. That also means
+they belong to the browser: another device or browser starts without them.
+
 ## Samples
 
 | Class | Shows |
@@ -178,7 +198,7 @@ other condition.
 | `z2ui5_cl_cgui_sample_02` | the list on its own — colors, checkbox, icon, pages, hotspots with `HIDE` |
 | `z2ui5_cl_cgui_sample_03` | the ALV on its own — column texts, a hidden column, row click |
 | `z2ui5_cl_cgui_sample_04` | the smallest report — hello world |
-| `z2ui5_cl_cgui_sample_05` | a complete report — select-option, F4 help, radio buttons for ALV or list, drilldown, reset with a confirmation popup |
+| `z2ui5_cl_cgui_sample_05` | a complete report — select-option, F4 help, radio buttons for ALV or list, drilldown, reset with a confirmation popup, starts with the variant `DEFAULT` |
 | `z2ui5_cl_cgui_sample_06` | a dynamic selection screen — `MODIF ID`, `USER-COMMAND`, `LOOP AT SCREEN`, read-only and password fields, `NO-DISPLAY`, `AT SELECTION-SCREEN ON field` |
 | `z2ui5_cl_cgui_sample_07` | value helps — standard F4 from domain fixed values and value table, own F4 for a parameter and a select-option |
 
@@ -199,6 +219,8 @@ Known limitations:
   `I CP` — use `z2ui5_cl_cgui_context=>range_check( )` for internal tables if
   the report must also run there. On an SAP system `IN` and
   `SELECT ... WHERE ... IN` work as usual.
+- Selection variants live in the browser's local storage — per browser
+  and device, not shared between users or kept on the server.
 - Value tables are read on premise only — on ABAP Cloud the DDIC is not
   read, and the standard F4 is the domain's fixed values.
 - `alv( )` binds a PUBLIC attribute directly; any other table is copied into
@@ -229,6 +251,9 @@ Known limitations:
       Cloud and on premise) and value tables (on premise), automatic for
       every DDIC-typed field; F4 with multiple selection on select-options,
       preselected, the range popup on a button of its own
+- [x] Phase 7 — selection variants: get, save as, delete, start with a
+      variant from the URL or `set_variant( )`, kept in the browser's local
+      storage
 
 **Next**
 
@@ -239,7 +264,9 @@ Selection screen
       popup of a select-option
 - [ ] `AT SELECTION-SCREEN ON BLOCK`, `ON RADIOBUTTON GROUP`, `AS LISTBOX`
 - [ ] `MEMORY ID`
-- [ ] Selection variants: save, load, start a report with a variant
+- [ ] Selection variants on the server: shared and protected variants,
+      a pluggable store beside the browser's local storage, dynamic date
+      values (today, start of month)
 - [ ] Selection screen painter: build a selection screen visually and
       generate the `selection_screen( )` method
 

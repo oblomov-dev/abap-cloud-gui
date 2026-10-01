@@ -13,7 +13,7 @@ list, ALV grid, messages. Language of code, comments, commits and docs:
 
 | Path | Content |
 |---|---|
-| `src/01` | the framework: `z2ui5_cl_cgui_report` (report runtime), `_selscreen`, `_list`, `_alv`, `_context` (RTTI and conversion helpers), `z2ui5_cx_cgui_error` |
+| `src/01` | the framework: `z2ui5_cl_cgui_report` (report runtime), `_selscreen`, `_list`, `_alv`, `_variant` (selection variants), `_context` (RTTI and conversion helpers), `z2ui5_cx_cgui_error` |
 | `src/02` | samples `z2ui5_cl_cgui_sample_01` … `_07` |
 | `.github/abaplint` | the Cloud and 7.02 gate configs; `abaplint.jsonc` at the root is the v750 inner loop |
 
@@ -28,7 +28,7 @@ Naming: every class is `Z2UI5_CL_CGUI_*` / `Z2UI5_CX_CGUI_*` (abaplint
   `z2ui5_cl_ui5_util_context` (copy a helper into `z2ui5_cl_cgui_context`
   instead).
 - [abap2UI5-addons/popups](https://github.com/abap2UI5-addons/popups) —
-  `z2ui5_cl_popup_get_range`, `_to_confirm`, `_to_select`.
+  `z2ui5_cl_popup_get_range`, `_to_confirm`, `_to_select`, `_input_val`.
 
 ## Targets
 
@@ -76,6 +76,16 @@ is the floor — `npm run check:abap2ui5` (the abap2UI5-linter).
   to `selected` - so a table that brings a `ZZSELKZ` comes up checked. The
   popup heads a column with the DDIC label of its type, and with `STRING`
   for a string: give value lists character types.
+- **Variants live in the browser's local storage** - this repository has no
+  table of its own. The invisible `z2ui5:Storage` control reads the catalog
+  into the PUBLIC `mv_cgui_variants` and fires `finished` while the first
+  view still renders - the wire needs `check_queue_last`, or the event is
+  dropped. `STORE_DATA` is called from a handler with a payload composed as
+  JSON (`z2ui5_cl_cgui_variant=>storage_json( )`), never with
+  `${ _bind( ) }`: a handler's binding argument arrives as text, and an
+  empty VALUE deletes the key. Keep bound and stored value equal after a
+  write, or the control reports again on the next render. A variant in the
+  URL is read after `initialization( )`, so it wins over `set_variant( )`.
 - **The report dispatcher is one IF/ELSEIF chain** over `check_on_init`,
   `check_on_navigated`, `check_on_event`, and every branch that shows the
   screen calls `view_display( )` — unless a popup app was called in the same

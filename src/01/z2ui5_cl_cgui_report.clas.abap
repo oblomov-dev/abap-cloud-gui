@@ -20,7 +20,10 @@
 "!                         of its DDIC type: domain fixed values or value
 "!                         table
 "! The runtime shows the selection screen, runs the blocks on Execute (F8),
-"! shows the output and goes back on Back (F3). Messages follow the classic
+"! shows the output and goes back on Back (F3). The values of the selection
+"! screen can be saved as variants, kept in the browser's local storage per
+"! report - start with one by set_variant( ) in initialization( ) or with
+"! the URL parameter variant=NAME. Messages follow the classic
 "! semantics: S as a toast, I and W as a box, E as a box that stops the run.
 CLASS z2ui5_cl_cgui_report DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
 
@@ -29,14 +32,28 @@ CLASS z2ui5_cl_cgui_report DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
 
     CONSTANTS:
       BEGIN OF cs_ucomm,
-        execute TYPE string VALUE `CGUI_EXECUTE`,
-        back    TYPE string VALUE `CGUI_BACK`,
-        cancel  TYPE string VALUE `CGUI_CANCEL`,
+        execute           TYPE string VALUE `CGUI_EXECUTE`,
+        back              TYPE string VALUE `CGUI_BACK`,
+        cancel            TYPE string VALUE `CGUI_CANCEL`,
+        variant_get       TYPE string VALUE `CGUI_VARIANT_GET`,
+        variant_save      TYPE string VALUE `CGUI_VARIANT_SAVE`,
+        variant_delete    TYPE string VALUE `CGUI_VARIANT_DELETE`,
+        variant_delete_ok TYPE string VALUE `CGUI_VARIANT_DELETE_OK`,
+        variants_loaded   TYPE string VALUE `CGUI_VARIANTS_LOADED`,
       END OF cs_ucomm.
+
+    "! the prefix of the browser's local storage the variants are kept
+    "! under, the key is the name of the report class
+    CONSTANTS cv_cgui_variant_prefix TYPE string VALUE `z2ui5_cgui_variants`.
 
     "! the output of alv( ) when the table passed is no attribute of the
     "! report - a copy, bound to the grid
     DATA mr_cgui_alv TYPE REF TO data.
+
+    "! the variants of the report as the browser's local storage holds them
+    "! (z2ui5_cl_cgui_variant=>catalog_to_string( )) - bound to the storage
+    "! control that reads them, hence PUBLIC
+    DATA mv_cgui_variants TYPE string.
 
   PROTECTED SECTION.
 
@@ -162,6 +179,14 @@ CLASS z2ui5_cl_cgui_report DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
       IMPORTING
         val TYPE clike.
 
+    "! load the selection variant name - in initialization( ) the report
+    "! starts with it, as soon as the browser has handed over the variants.
+    "! A variant that does not exist is passed over without a message, so a
+    "! report can start with a variant DEFAULT whenever the user saved one
+    METHODS set_variant
+      IMPORTING
+        name TYPE clike.
+
     " the runtime's own state - PROTECTED, not PRIVATE: the draft persists
     " the app with CALL TRANSFORMATION id, and the transpiled runtime reaches
     " PROTECTED attributes but not PRIVATE ones. The cgui prefix keeps them
@@ -180,6 +205,9 @@ CLASS z2ui5_cl_cgui_report DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
     DATA mv_cgui_pending_kind  TYPE string.
     DATA mv_cgui_pending_col   TYPE string.
     DATA mv_cgui_on_field      TYPE string.
+    DATA mv_cgui_variant       TYPE string.
+    DATA mv_cgui_variant_start TYPE string.
+    DATA mv_cgui_variant_url   TYPE abap_bool.
 
   PRIVATE SECTION.
 
@@ -191,13 +219,60 @@ CLASS z2ui5_cl_cgui_report DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
 
     CONSTANTS:
       BEGIN OF cs_pending,
-        range TYPE string VALUE `RANGE`,
-        f4    TYPE string VALUE `F4`,
+        range          TYPE string VALUE `RANGE`,
+        f4             TYPE string VALUE `F4`,
+        variant_get    TYPE string VALUE `VARIANT_GET`,
+        variant_save   TYPE string VALUE `VARIANT_SAVE`,
+        variant_delete TYPE string VALUE `VARIANT_DELETE`,
       END OF cs_pending.
+
+    TYPES:
+      " character types - the popup heads its columns with their names
+      BEGIN OF ty_s_variant_row,
+        variant TYPE c LENGTH 40,
+        values  TYPE c LENGTH 255,
+      END OF ty_s_variant_row.
+    TYPES ty_t_variant_row TYPE STANDARD TABLE OF ty_s_variant_row WITH EMPTY KEY.
 
     METHODS on_event.
 
     METHODS on_navigated.
+
+    METHODS variant_popup
+      IMPORTING
+        kind TYPE string.
+
+    METHODS variant_selected
+      RETURNING
+        VALUE(result) TYPE string.
+
+    METHODS variant_apply
+      IMPORTING
+        name          TYPE string
+      RETURNING
+        VALUE(result) TYPE abap_bool.
+
+    METHODS variant_save
+      IMPORTING
+        name TYPE string.
+
+    METHODS variant_delete
+      IMPORTING
+        name TYPE string.
+
+    METHODS variant_store
+      IMPORTING
+        variants TYPE z2ui5_cl_cgui_variant=>ty_t_variant.
+
+    METHODS variant_key
+      RETURNING
+        VALUE(result) TYPE string.
+
+    METHODS variant_from_url
+      RETURNING
+        VALUE(result) TYPE string.
+
+    METHODS on_variants_loaded.
 
     METHODS on_execute.
 
@@ -271,6 +346,12 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
       mv_cgui_screen = cs_screen-selection.
       mv_cgui_title = cl_abap_typedescr=>describe_by_object_ref( me )->get_relative_name( ).
       initialization( ).
+      " a variant in the URL wins over the one initialization( ) set
+      DATA(lv_variant) = variant_from_url( ).
+      IF lv_variant IS NOT INITIAL.
+        mv_cgui_variant_start = lv_variant.
+        mv_cgui_variant_url = abap_true.
+      ENDIF.
       view_display( ).
     ELSEIF client->check_on_navigated( ).
       " back from a popup - a confirmed popup_to_confirm( ) returns with
@@ -468,6 +549,23 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
         leave_to_selection_screen( ).
 
       WHEN cs_ucomm-cancel.
+        CLEAR mv_cgui_pending_field.
+
+      WHEN cs_ucomm-variants_loaded.
+        on_variants_loaded( ).
+
+      WHEN cs_ucomm-variant_get.
+        variant_popup( cs_pending-variant_get ).
+
+      WHEN cs_ucomm-variant_save.
+        variant_popup( cs_pending-variant_save ).
+
+      WHEN cs_ucomm-variant_delete.
+        variant_popup( cs_pending-variant_delete ).
+
+      WHEN cs_ucomm-variant_delete_ok.
+        variant_delete( mv_cgui_pending_field ).
+        CLEAR mv_cgui_pending_field.
 
       WHEN z2ui5_cl_cgui_selscreen=>cs_event-select_option.
         on_range_popup( client->get_event_arg( ) ).
@@ -494,7 +592,9 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
 
   METHOD on_navigated.
 
-    IF mv_cgui_pending_field IS INITIAL.
+    DATA lo_input TYPE REF TO z2ui5_cl_popup_input_val.
+
+    IF mv_cgui_pending_kind IS INITIAL.
       RETURN.
     ENDIF.
 
@@ -506,10 +606,235 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
     CASE lv_kind.
       WHEN cs_pending-range.
         on_range_result( lv_field ).
+
       WHEN cs_pending-f4.
         on_f4_result( field = lv_field
                       col   = lv_col ).
+
+      WHEN cs_pending-variant_get.
+        DATA(lv_name) = variant_selected( ).
+        IF lv_name IS NOT INITIAL AND variant_apply( lv_name ) = abap_true.
+          message( |Variant { lv_name } loaded| ).
+        ENDIF.
+
+      WHEN cs_pending-variant_save.
+        TRY.
+            lo_input ?= client->get_app_prev( ).
+          CATCH cx_root.
+            RETURN.
+        ENDTRY.
+        IF lo_input->result( )-check_confirmed = abap_true.
+          variant_save( condense( lo_input->result( )-value ) ).
+        ENDIF.
+
+      WHEN cs_pending-variant_delete.
+        lv_name = variant_selected( ).
+        IF lv_name IS NOT INITIAL.
+          " the name waits in mv_cgui_pending_field for the confirmation
+          mv_cgui_pending_field = lv_name.
+          popup_to_confirm( question = |Delete the variant { lv_name }?|
+                            ucomm    = cs_ucomm-variant_delete_ok
+                            title    = `Delete Variant` ).
+        ENDIF.
+
     ENDCASE.
+
+  ENDMETHOD.
+
+  METHOD variant_popup.
+
+    DATA lt_row TYPE ty_t_variant_row.
+
+    DATA(lt_variant) = z2ui5_cl_cgui_variant=>catalog_from_string( mv_cgui_variants ).
+
+    IF kind = cs_pending-variant_save.
+      mv_cgui_pending_kind = kind.
+      mv_cgui_nav = abap_true.
+      client->nav_app_call( z2ui5_cl_popup_input_val=>factory( text  = `Variant name`
+                                                               val   = mv_cgui_variant
+                                                               title = `Save as Variant` ) ).
+      RETURN.
+    ENDIF.
+
+    IF lt_variant IS INITIAL.
+      message( text = `No variants saved for this report yet`
+               type = `I` ).
+      RETURN.
+    ENDIF.
+
+    LOOP AT lt_variant REFERENCE INTO DATA(lr_variant).
+      INSERT VALUE #( variant = lr_variant->name
+                      values  = lr_variant->text ) INTO TABLE lt_row.
+    ENDLOOP.
+
+    mv_cgui_pending_kind = kind.
+    mv_cgui_nav = abap_true.
+    client->nav_app_call( z2ui5_cl_popup_to_select=>factory(
+        i_tab   = lt_row
+        i_title = COND #( WHEN kind = cs_pending-variant_delete THEN `Delete Variant` ELSE `Get Variant` ) ) ).
+
+  ENDMETHOD.
+
+  METHOD variant_selected.
+
+    FIELD-SYMBOLS <row> TYPE ty_s_variant_row.
+    DATA lo_popup TYPE REF TO z2ui5_cl_popup_to_select.
+
+    TRY.
+        lo_popup ?= client->get_app_prev( ).
+      CATCH cx_root.
+        RETURN.
+    ENDTRY.
+
+    DATA(ls_result) = lo_popup->result( ).
+    IF ls_result-check_confirmed = abap_false OR ls_result-row IS NOT BOUND.
+      RETURN.
+    ENDIF.
+    ASSIGN ls_result-row->* TO <row>.
+    result = condense( <row>-variant ).
+
+  ENDMETHOD.
+
+  METHOD variant_apply.
+
+    DATA(lt_variant) = z2ui5_cl_cgui_variant=>catalog_from_string( mv_cgui_variants ).
+
+    READ TABLE lt_variant REFERENCE INTO DATA(lr_variant) WITH KEY name = name.
+    IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
+
+    z2ui5_cl_cgui_variant=>values_set( app    = me
+                                       values = lr_variant->values ).
+    mv_cgui_variant = name.
+    result = abap_true.
+
+  ENDMETHOD.
+
+  METHOD variant_save.
+
+    DATA lt_name TYPE string_table.
+
+    IF name IS INITIAL.
+      message( text = `Enter a name for the variant`
+               type = `E` ).
+      RETURN.
+    ENDIF.
+
+    LOOP AT mt_cgui_field REFERENCE INTO DATA(lr_field).
+      INSERT lr_field->name INTO TABLE lt_name.
+    ENDLOOP.
+    DATA(lt_value) = z2ui5_cl_cgui_variant=>values_get( app   = me
+                                                        names = lt_name ).
+
+    DATA(lt_variant) = z2ui5_cl_cgui_variant=>catalog_from_string( mv_cgui_variants ).
+    DELETE lt_variant WHERE name = name.
+    INSERT VALUE #( name   = name
+                    text   = z2ui5_cl_cgui_variant=>values_to_text( values = lt_value
+                                                                    fields = mt_cgui_field )
+                    values = lt_value ) INTO TABLE lt_variant.
+    SORT lt_variant BY name.
+
+    variant_store( lt_variant ).
+    mv_cgui_variant = name.
+    message( |Variant { name } saved| ).
+
+  ENDMETHOD.
+
+  METHOD variant_delete.
+
+    DATA(lt_variant) = z2ui5_cl_cgui_variant=>catalog_from_string( mv_cgui_variants ).
+    DELETE lt_variant WHERE name = name.
+
+    variant_store( lt_variant ).
+    IF mv_cgui_variant = name.
+      CLEAR mv_cgui_variant.
+    ENDIF.
+    message( |Variant { name } deleted| ).
+
+  ENDMETHOD.
+
+  METHOD variant_store.
+
+    " the bound value and the stored one stay the same, so the storage
+    " control has nothing to report on the next render. An empty catalog
+    " removes the key
+    CLEAR mv_cgui_variants.
+    IF variants IS NOT INITIAL.
+      mv_cgui_variants = z2ui5_cl_cgui_variant=>catalog_to_string( variants ).
+    ENDIF.
+
+    client->follow_up_action( val   = client->cs_event-store_data
+                              t_arg = VALUE #( ( z2ui5_cl_cgui_variant=>storage_json( prefix = cv_cgui_variant_prefix
+                                                                                      key    = variant_key( )
+                                                                                      val    = mv_cgui_variants ) ) ) ).
+
+  ENDMETHOD.
+
+  METHOD variant_key.
+
+    result = cl_abap_typedescr=>describe_by_object_ref( me )->get_relative_name( ).
+
+  ENDMETHOD.
+
+  METHOD variant_from_url.
+
+    DATA lt_param TYPE string_table.
+    DATA lv_name  TYPE string.
+    DATA lv_value TYPE string.
+
+    LOOP AT client->get( )-t_comp_params REFERENCE INTO DATA(lr_comp).
+      IF to_upper( lr_comp->n ) = `VARIANT`.
+        result = lr_comp->v.
+        RETURN.
+      ENDIF.
+    ENDLOOP.
+
+    DATA(lv_search) = client->get( )-s_config-search.
+    IF lv_search IS INITIAL.
+      RETURN.
+    ENDIF.
+    IF lv_search(1) = `?`.
+      lv_search = lv_search+1.
+    ENDIF.
+
+    SPLIT lv_search AT `&` INTO TABLE lt_param.
+    LOOP AT lt_param INTO DATA(lv_param).
+      SPLIT lv_param AT `=` INTO lv_name lv_value.
+      IF to_upper( lv_name ) = `VARIANT`.
+        result = replace( val = lv_value sub = `+` with = ` ` occ = 0 ).
+        result = replace( val = result sub = `%20` with = ` ` occ = 0 ).
+        RETURN.
+      ENDIF.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD on_variants_loaded.
+
+    " the storage control has put the stored variants into mv_cgui_variants
+    IF mv_cgui_variant_start IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    DATA(lv_start) = mv_cgui_variant_start.
+    CLEAR mv_cgui_variant_start.
+    IF variant_apply( lv_start ) = abap_false AND mv_cgui_variant_url = abap_true.
+      message( text = |Variant { lv_start } does not exist|
+               type = `W` ).
+    ENDIF.
+
+  ENDMETHOD.
+
+  METHOD set_variant.
+
+    DATA lv_name TYPE string.
+
+    lv_name = name.
+    mv_cgui_variant_url = abap_false.
+    IF mv_cgui_variants IS INITIAL OR variant_apply( lv_name ) = abap_false.
+      mv_cgui_variant_start = lv_name.
+    ENDIF.
 
   ENDMETHOD.
 
@@ -865,6 +1190,7 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
         )->ele( n = `View` ns = `mvc`
             )->a( n = `xmlns`        v = `sap.m`
             )->a( n = `xmlns:mvc`    v = `sap.ui.core.mvc`
+            )->a( n = `xmlns:z2ui5`  v = `z2ui5.cc`
             )->a( n = `displayBlock` v = `true`
             )->a( n = `height`       v = `100%` ).
 
@@ -872,6 +1198,18 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
         )->a( n = `title`          t = mv_cgui_title
         )->a( n = `showNavButton`  b = xsdbool( mv_cgui_screen = cs_screen-output )
         )->a( n = `navButtonPress` v = client->_event( cs_ucomm-back ) ).
+
+    " reads the variants out of the browser's local storage into
+    " mv_cgui_variants and reports them when they differ from what the
+    " backend has - fired while the first view still renders, so the event
+    " is queued instead of dropped (check_queue_last)
+    page->tag( n = `Storage` ns = `z2ui5`
+        )->a( n = `type`     v = `local`
+        )->a( n = `prefix`   v = cv_cgui_variant_prefix
+        )->a( n = `key`      t = variant_key( )
+        )->a( n = `value`    v = client->_bind( mv_cgui_variants )
+        )->a( n = `finished` v = client->_event( val    = cs_ucomm-variants_loaded
+                                                 s_ctrl = VALUE #( check_queue_last = abap_true ) ) ).
 
     IF mv_cgui_screen = cs_screen-output.
       view_display_output( page ).
@@ -891,14 +1229,30 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
       lv_button_ucomm = cs_ucomm-execute.
     ENDIF.
 
-    page->ele( `footer`
-        )->ele( `OverflowToolbar`
-            )->tag( `ToolbarSpacer`
-            )->tag( `Button`
-                )->a( n = `text`  t = lv_button_text
-                )->a( n = `icon`  v = lv_button_icon
-                )->a( n = `type`  v = `Emphasized`
-                )->a( n = `press` v = client->_event( lv_button_ucomm ) ).
+    DATA(toolbar) = page->ele( `footer`
+        )->ele( `OverflowToolbar` ).
+
+    IF mv_cgui_screen = cs_screen-selection AND mt_cgui_field IS NOT INITIAL.
+      toolbar->tag( `Button`
+          )->a( n = `text`  v = `Get Variant`
+          )->a( n = `icon`  v = `sap-icon://open-folder`
+          )->a( n = `press` v = client->_event( cs_ucomm-variant_get )
+          )->tag( `Button`
+          )->a( n = `text`  v = `Save as Variant`
+          )->a( n = `icon`  v = `sap-icon://save`
+          )->a( n = `press` v = client->_event( cs_ucomm-variant_save )
+          )->tag( `Button`
+          )->a( n = `text`  v = `Delete Variant`
+          )->a( n = `icon`  v = `sap-icon://delete`
+          )->a( n = `press` v = client->_event( cs_ucomm-variant_delete ) ).
+    ENDIF.
+
+    toolbar->tag( `ToolbarSpacer`
+        )->tag( `Button`
+        )->a( n = `text`  t = lv_button_text
+        )->a( n = `icon`  v = lv_button_icon
+        )->a( n = `type`  v = `Emphasized`
+        )->a( n = `press` v = client->_event( lv_button_ucomm ) ).
 
     client->view_display( view->stringify( ) ).
 

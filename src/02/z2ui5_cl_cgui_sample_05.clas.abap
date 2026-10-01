@@ -58,6 +58,8 @@ CLASS z2ui5_cl_cgui_sample_05 IMPLEMENTATION.
     p_alv = abap_true.
     s_fldate = VALUE #( ( sign = `I` option = `BT` low = `20260101` high = `20260331` ) ).
     mock_data( ).
+    " save a variant named DEFAULT and the report starts with it
+    set_variant( `DEFAULT` ).
 
   ENDMETHOD.
 
