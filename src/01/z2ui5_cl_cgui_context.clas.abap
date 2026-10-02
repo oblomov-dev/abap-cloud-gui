@@ -26,9 +26,9 @@ CLASS z2ui5_cl_cgui_context DEFINITION PUBLIC FINAL CREATE PUBLIC.
       END OF ty_s_fix_val.
     TYPES ty_t_fix_val TYPE STANDARD TABLE OF ty_s_fix_val WITH EMPTY KEY.
 
-    "! the value table of a domain: the table, its key field with the
-    "! domain, and the fields worth showing - every field but the client
     TYPES:
+      "! the value table of a domain: the table, its key field with the
+      "! domain, and the fields worth showing - every field but the client
       BEGIN OF ty_s_value_table,
         table  TYPE string,
         field  TYPE string,

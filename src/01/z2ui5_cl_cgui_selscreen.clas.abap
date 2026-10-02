@@ -49,10 +49,10 @@ CLASS z2ui5_cl_cgui_selscreen DEFINITION PUBLIC FINAL CREATE PRIVATE.
       END OF ty_s_field.
     TYPES ty_t_field TYPE STANDARD TABLE OF ty_s_field WITH EMPTY KEY.
 
-    "! a line of loop_at_screen( ) - the classic SCREEN structure, with
-    "! abap_bool flags instead of '0' / '1'. id is the position of the field
-    "! on the screen, modify_screen( ) finds it by that - leave it unchanged
     TYPES:
+      "! a line of loop_at_screen( ) - the classic SCREEN structure, with
+      "! abap_bool flags instead of '0' / '1'. id is the position of the field
+      "! on the screen, modify_screen( ) finds it by that - leave it unchanged
       BEGIN OF ty_s_screen,
         id        TYPE i,
         name      TYPE string,

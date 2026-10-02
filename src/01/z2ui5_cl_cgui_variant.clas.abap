@@ -14,10 +14,10 @@ CLASS z2ui5_cl_cgui_variant DEFINITION PUBLIC FINAL CREATE PUBLIC.
         select_option TYPE string VALUE `S`,
       END OF cs_kind.
 
-    "! one value of a variant: a parameter has one line with its value in
-    "! low, a select-option one line per range line - and one line without
-    "! sign when it is empty, so that loading the variant clears it
     TYPES:
+      "! one value of a variant: a parameter has one line with its value in
+      "! low, a select-option one line per range line - and one line without
+      "! sign when it is empty, so that loading the variant clears it
       BEGIN OF ty_s_value,
         name   TYPE string,
         kind   TYPE string,

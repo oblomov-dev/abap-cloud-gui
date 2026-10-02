@@ -21,11 +21,11 @@ CLASS z2ui5_cl_cgui_painter_code DEFINITION PUBLIC FINAL CREATE PUBLIC.
         button        TYPE string VALUE `BUTTON`,
       END OF cs_kind.
 
-    "! one element of the selection screen. type is the ABAP type of a
-    "! parameter or select-option (c LENGTH 10, d, i, a DDIC type) and the
-    "! icon of a button; group is the radio button group or the event of
-    "! a button
     TYPES:
+      "! one element of the selection screen. type is the ABAP type of a
+      "! parameter or select-option (c LENGTH 10, d, i, a DDIC type) and the
+      "! icon of a button; group is the radio button group or the event of
+      "! a button
       BEGIN OF ty_s_element,
         id           TYPE i,
         kind         TYPE string,
@@ -222,7 +222,9 @@ CLASS z2ui5_cl_cgui_painter_code IMPLEMENTATION.
             INSERT |{ lv_pos }: the field needs a name| INTO TABLE result.
             CONTINUE.
           ENDIF.
-          IF strlen( lv_name ) > 27 OR NOT matches( val = lv_name regex = `[A-Z][A-Z0-9_]*` ).
+          IF strlen( lv_name ) > 27
+              OR substring( val = lv_name len = 1 ) NA `ABCDEFGHIJKLMNOPQRSTUVWXYZ`
+              OR lv_name CN `ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_`.
             INSERT |{ lv_pos }: { lr_element->name } is no name - a letter, then letters, digits or _, at most 27| INTO TABLE result.
           ELSEIF lv_name = `CLIENT` OR lv_name CS `CGUI`.
             INSERT |{ lv_pos }: { lr_element->name } is taken by the report runtime| INTO TABLE result.

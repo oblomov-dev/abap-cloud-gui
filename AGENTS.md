@@ -118,6 +118,16 @@ is the floor — `npm run check:abap2ui5` (the abap2UI5-linter).
   argument (`${$parameters>/item}` arrives as JSON with the item's id),
   whose `cgui_msg_<n>` is the index into the log; the field control has the
   id `z2ui5_cl_cgui_selscreen=>field_id( )` for `SET_FOCUS`.
+- **ABAP Doc goes after the colon of a chained declaration.** `"!` in
+  front of `TYPES:` / `CONSTANTS:` is "in the wrong position" for the
+  extended check; write `TYPES:` and the `"!` lines below it, in front of
+  `BEGIN OF`. abaplint `wrong_abapdoc_position` checks it in all three gates.
+- **No regular expressions.** POSIX (`FIND REGEX`, `matches( regex = )`,
+  `cl_abap_regex`) is deprecated from 7.55 on and warns in the extended
+  check; PCRE does not exist on 7.02. Use `FIND`, `CS` / `CN` / `CA` /
+  `NA` and `substring( )`. abaplint has no rule for it:
+  `npm run check:regex` (`scripts/check-regex.mjs`) fails on any regex in
+  `src`.
 - **The report dispatcher is one IF/ELSEIF chain** over `check_on_init`,
   `check_on_navigated`, `check_on_event`, and every branch that shows the
   screen calls `view_display( )` — unless a popup app was called in the same
