@@ -1442,13 +1442,21 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
 
   METHOD message_focus.
 
-    DATA lv_index TYPE string.
+    DATA lv_offset TYPE i.
+    DATA lv_index  TYPE string.
 
     client->follow_up_action( val   = client->cs_event-control_by_id
                               t_arg = VALUE #( ( cv_cgui_popover_id ) ( `close` ) ) ).
 
-    FIND REGEX `cgui_msg_(\d+)` IN arg SUBMATCHES lv_index.
+    FIND `cgui_msg_` IN arg MATCH OFFSET lv_offset.
     IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
+    lv_index = substring( val = arg off = lv_offset + 9 ).
+    IF lv_index CN `0123456789`.
+      lv_index = substring( val = lv_index len = sy-fdpos ).
+    ENDIF.
+    IF lv_index IS INITIAL.
       RETURN.
     ENDIF.
     READ TABLE mt_cgui_log REFERENCE INTO DATA(lr_msg) INDEX CONV i( lv_index ).

@@ -21,8 +21,8 @@ CLASS z2ui5_cl_cgui_list DEFINITION PUBLIC FINAL CREATE PUBLIC.
         line_selection TYPE string VALUE `CGUI_LINE_SELECTION`,
       END OF cs_event.
 
-    "! the colors of FORMAT COLOR, as UI5 value states
     CONSTANTS:
+      "! the colors of FORMAT COLOR, as UI5 value states
       BEGIN OF cs_color,
         none     TYPE string VALUE ``,
         positive TYPE string VALUE `Success`,

@@ -78,13 +78,16 @@ CLASS ltcl_test IMPLEMENTATION.
         ( kind = `PARAMETER` name = `P_X` type = `c LENGHT 3` )
         ( kind = `CHECKBOX` name = `client` )
         ( kind = `BUTTON` text = `Go` )
-        ( kind = `COMMENT` ) ) ).
+        ( kind = `COMMENT` )
+        ( kind = `PARAMETER` name = `p-x` type = `i` ) ) ).
 
     " line 4 has two: the name is taken, and LENGHT is no keyword
-    cl_abap_unit_assert=>assert_equals( exp = 8
+    cl_abap_unit_assert=>assert_equals( exp = 9
                                         act = lines( lt_message ) ).
     cl_abap_unit_assert=>assert_char_cp( act = lt_message[ 4 ]
                                          exp = `Line 4: P_X is declared twice` ).
+    cl_abap_unit_assert=>assert_char_cp( act = lt_message[ 9 ]
+                                         exp = `Line 8: p-x is no name*` ).
 
   ENDMETHOD.
 

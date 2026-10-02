@@ -35,6 +35,7 @@
     "errorNamespace": "."
   },
   "rules": {
+    "wrong_abapdoc_position": true,
     "downport": true,
     "begin_end_names": true,
     "check_ddic": true,
