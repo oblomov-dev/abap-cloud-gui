@@ -32,9 +32,9 @@ CLASS z2ui5_cl_cgui_context DEFINITION PUBLIC FINAL CREATE PUBLIC.
       END OF ty_s_fix_val.
     TYPES ty_t_fix_val TYPE STANDARD TABLE OF ty_s_fix_val WITH EMPTY KEY.
 
-    "! the value table of a domain: the table, its key field with the
-    "! domain, and the fields worth showing - every field but the client
     TYPES:
+      "! the value table of a domain: the table, its key field with the
+      "! domain, and the fields worth showing - every field but the client
       BEGIN OF ty_s_value_table,
         table  TYPE string,
         field  TYPE string,
@@ -59,17 +59,17 @@ CLASS z2ui5_cl_cgui_context DEFINITION PUBLIC FINAL CREATE PUBLIC.
       RETURNING
         VALUE(result) TYPE string.
 
+    "! is the type an ABAP boolean (ABAP_BOOL, XSDBOOLEAN, BOOLE_D, ...)
     CLASS-METHODS rtti_check_boolean
       IMPORTING
         val           TYPE any
       RETURNING
         VALUE(result) TYPE abap_bool.
 
-    "! is the type an ABAP boolean (ABAP_BOOL, XSDBOOLEAN, BOOLE_D, ...)
-    "! the elementary search help of a data element - name and the field
-    "! of the search help the value is taken from; empty when there is
-    "! none (and always on ABAP Cloud)
     TYPES:
+      "! the elementary search help of a data element - name and the field
+      "! of the search help the value is taken from; empty when there is
+      "! none (and always on ABAP Cloud)
       BEGIN OF ty_s_search_help,
         name  TYPE string,
         field TYPE string,
@@ -221,6 +221,48 @@ CLASS z2ui5_cl_cgui_context DEFINITION PUBLIC FINAL CREATE PUBLIC.
       RETURNING
         VALUE(result) TYPE abap_bool.
 
+    "! val as UTF-8 - through CL_ABAP_CONV_CODEPAGE where it exists (ABAP
+    "! Cloud, 7.5x) and CL_ABAP_CONV_OUT_CE below, both named as strings
+    "! as abap2UI5 does it; empty when neither converts
+    CLASS-METHODS conv_get_xstring_by_string
+      IMPORTING
+        val           TYPE string
+      RETURNING
+        VALUE(result) TYPE xstring.
+
+    "! UTF-8 val as text - the counterpart of conv_get_xstring_by_string( )
+    CLASS-METHODS conv_get_string_by_xstring
+      IMPORTING
+        val           TYPE xstring
+      RETURNING
+        VALUE(result) TYPE string.
+
+    "! val in base64 - plain ABAP, for the data URI of a download
+    CLASS-METHODS conv_encode_x_base64
+      IMPORTING
+        val           TYPE xstring
+      RETURNING
+        VALUE(result) TYPE string.
+
+    "! val in width characters, aligned LEFT, RIGHT or CENTER with blanks -
+    "! a string template's WIDTH and ALIGN, which the transpiled runtime
+    "! aligns left only. A longer val stays as it is
+    CLASS-METHODS text_align
+      IMPORTING
+        val           TYPE string
+        width         TYPE i
+        align         TYPE string DEFAULT `LEFT`
+      RETURNING
+        VALUE(result) TYPE string.
+
+    "! val for a URL: every byte of its UTF-8 but the unreserved characters
+    "! A-Z a-z 0-9 - _ . ~ as %XX
+    CLASS-METHODS url_escape
+      IMPORTING
+        val           TYPE string
+      RETURNING
+        VALUE(result) TYPE string.
+
   PROTECTED SECTION.
   PRIVATE SECTION.
 
@@ -237,6 +279,14 @@ CLASS z2ui5_cl_cgui_context DEFINITION PUBLIC FINAL CREATE PUBLIC.
       EXPORTING
         texts       TYPE ty_s_data_element_text
         do_fallback TYPE abap_bool.
+
+    "! a line of a SAPscript text without its tags <..> and its symbols
+    "! &NAME& - by hand, there are no regular expressions here
+    CLASS-METHODS docu_strip
+      IMPORTING
+        val           TYPE string
+      RETURNING
+        VALUE(result) TYPE string.
 
     CLASS-METHODS range_line_to_text
       IMPORTING
@@ -257,6 +307,209 @@ ENDCLASS.
 
 
 CLASS z2ui5_cl_cgui_context IMPLEMENTATION.
+
+  METHOD docu_strip.
+
+    DATA lt_part TYPE string_table.
+    DATA lv_off  TYPE i.
+
+    DATA(lv_len) = strlen( val ).
+    WHILE lv_off < lv_len.
+      DATA(lv_char) = substring( val = val off = lv_off len = 1 ).
+      IF lv_char = `<` OR lv_char = `&`.
+        DATA(lv_rest) = substring( val = val off = lv_off + 1 ).
+        DATA(lv_close) = COND string( WHEN lv_char = `<` THEN `>` ELSE `&` ).
+        DATA(lv_end) = find( val = lv_rest sub = lv_close ).
+        IF lv_end >= 0.
+          DATA(lv_inner) = substring( val = lv_rest len = lv_end ).
+          " a tag is anything up to >, a symbol a name of A-Z, 0-9 and _
+          IF lv_char = `<` OR ( lv_end > 0 AND lv_inner CO `ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789` ).
+            lv_off = lv_off + lv_end + 2.
+            CONTINUE.
+          ENDIF.
+        ENDIF.
+      ENDIF.
+      INSERT lv_char INTO TABLE lt_part.
+      lv_off = lv_off + 1.
+    ENDWHILE.
+    result = concat_lines_of( lt_part ).
+
+  ENDMETHOD.
+
+  METHOD conv_get_xstring_by_string.
+
+    DATA lo_conv  TYPE REF TO object.
+    DATA lv_class TYPE c LENGTH 30.
+
+    TRY.
+        lv_class = `CL_ABAP_CONV_CODEPAGE`.
+        CALL METHOD (lv_class)=>create_out
+          RECEIVING
+            instance = lo_conv.
+        CALL METHOD lo_conv->(`IF_ABAP_CONV_OUT~CONVERT`)
+          EXPORTING
+            source = val
+          RECEIVING
+            result = result.
+        RETURN.
+      CATCH cx_root ##NO_HANDLER.
+        " not there - the classic class below
+    ENDTRY.
+
+    TRY.
+        lv_class = `CL_ABAP_CONV_OUT_CE`.
+        CALL METHOD (lv_class)=>create
+          EXPORTING
+            encoding = `UTF-8`
+          RECEIVING
+            conv     = lo_conv.
+        CALL METHOD lo_conv->(`CONVERT`)
+          EXPORTING
+            data   = val
+          IMPORTING
+            buffer = result.
+      CATCH cx_root.
+        CLEAR result.
+    ENDTRY.
+
+  ENDMETHOD.
+
+  METHOD conv_get_string_by_xstring.
+
+    DATA lo_conv  TYPE REF TO object.
+    DATA lv_class TYPE c LENGTH 30.
+
+    TRY.
+        lv_class = `CL_ABAP_CONV_CODEPAGE`.
+        CALL METHOD (lv_class)=>create_in
+          RECEIVING
+            instance = lo_conv.
+        CALL METHOD lo_conv->(`IF_ABAP_CONV_IN~CONVERT`)
+          EXPORTING
+            source = val
+          RECEIVING
+            result = result.
+        RETURN.
+      CATCH cx_root ##NO_HANDLER.
+        " not there - the classic class below
+    ENDTRY.
+
+    TRY.
+        lv_class = `CL_ABAP_CONV_IN_CE`.
+        CALL METHOD (lv_class)=>create
+          EXPORTING
+            encoding = `UTF-8`
+          RECEIVING
+            conv     = lo_conv.
+        CALL METHOD lo_conv->(`CONVERT`)
+          EXPORTING
+            input = val
+          IMPORTING
+            data  = result.
+      CATCH cx_root.
+        CLEAR result.
+    ENDTRY.
+
+  ENDMETHOD.
+
+  METHOD conv_encode_x_base64.
+
+    CONSTANTS lc_alphabet TYPE string VALUE `ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/`.
+    DATA lt_part   TYPE string_table.
+    DATA lv_byte   TYPE x LENGTH 1.
+    DATA lv_off    TYPE i.
+    DATA lv_rest   TYPE i.
+    DATA lv_value  TYPE i.
+    DATA lv_triple TYPE i.
+    DATA lv_part   TYPE string.
+
+    DATA(lv_len) = xstrlen( val ).
+    WHILE lv_off < lv_len.
+      lv_rest = lv_len - lv_off.
+      lv_triple = 0.
+      DO 3 TIMES.
+        lv_triple = lv_triple * 256.
+        IF sy-index <= lv_rest.
+          lv_byte = val+lv_off(1).
+          lv_value = lv_byte.
+          lv_triple = lv_triple + lv_value.
+          lv_off = lv_off + 1.
+        ENDIF.
+      ENDDO.
+      lv_part = substring( val = lc_alphabet off = lv_triple DIV 262144 len = 1 )
+             && substring( val = lc_alphabet off = ( lv_triple DIV 4096 ) MOD 64 len = 1 ).
+      IF lv_rest > 1.
+        lv_part = lv_part && substring( val = lc_alphabet off = ( lv_triple DIV 64 ) MOD 64 len = 1 ).
+      ELSE.
+        lv_part = lv_part && `=`.
+      ENDIF.
+      IF lv_rest > 2.
+        lv_part = lv_part && substring( val = lc_alphabet off = lv_triple MOD 64 len = 1 ).
+      ELSE.
+        lv_part = lv_part && `=`.
+      ENDIF.
+      INSERT lv_part INTO TABLE lt_part.
+    ENDWHILE.
+    result = concat_lines_of( lt_part ).
+
+  ENDMETHOD.
+
+  METHOD text_align.
+
+    DATA(lv_fill) = width - strlen( val ).
+    IF lv_fill <= 0.
+      result = val.
+      RETURN.
+    ENDIF.
+    CASE align.
+      WHEN `RIGHT`.
+        result = repeat( val = ` `
+                         occ = lv_fill ) && val.
+      WHEN `CENTER`.
+        DATA(lv_left) = lv_fill DIV 2.
+        result = repeat( val = ` `
+                         occ = lv_left ) && val && repeat( val = ` `
+                                                           occ = lv_fill - lv_left ).
+      WHEN OTHERS.
+        result = val && repeat( val = ` `
+                                occ = lv_fill ).
+    ENDCASE.
+
+  ENDMETHOD.
+
+  METHOD url_escape.
+
+    " the printable ASCII characters from 32 on, the byte is the position
+    CONSTANTS lc_ascii TYPE string
+      VALUE ` !"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_``abcdefghijklmnopqrstuvwxyz{|}~`.
+    CONSTANTS lc_keep  TYPE string VALUE `ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~`.
+    DATA lt_part  TYPE string_table.
+    DATA lv_byte  TYPE x LENGTH 1.
+    DATA lv_hex   TYPE c LENGTH 2.
+    DATA lv_value TYPE i.
+    DATA lv_off   TYPE i.
+    DATA lv_char  TYPE string.
+
+    DATA(lv_utf8) = conv_get_xstring_by_string( val ).
+    DATA(lv_len) = xstrlen( lv_utf8 ).
+    WHILE lv_off < lv_len.
+      lv_byte = lv_utf8+lv_off(1).
+      lv_value = lv_byte.
+      lv_off = lv_off + 1.
+      IF lv_value >= 32 AND lv_value < 127.
+        lv_char = substring( val = lc_ascii off = lv_value - 32 len = 1 ).
+        IF lv_char CO lc_keep.
+          INSERT lv_char INTO TABLE lt_part.
+          CONTINUE.
+        ENDIF.
+      ENDIF.
+      lv_hex = lv_byte.
+      INSERT |%{ lv_hex }| INTO TABLE lt_part.
+    ENDWHILE.
+    result = concat_lines_of( lt_part ).
+
+  ENDMETHOD.
+
 
   METHOD attri_name_by_ref.
 
@@ -750,6 +1003,7 @@ CLASS z2ui5_cl_cgui_context IMPLEMENTATION.
     " F4IF_GET_SHLP_DESCR, F4IF_EXPAND_SEARCHHELP and F4IF_SELECT_VALUES and
     " their types are named as strings: on ABAP Cloud they do not exist,
     " the select ends in the CATCH and the field keeps its other F4
+    DATA lv_function TYPE c LENGTH 30.
     DATA lr_shlp   TYPE REF TO data.
     DATA lr_shlps  TYPE REF TO data.
     DATA lr_return TYPE REF TO data.
@@ -786,7 +1040,8 @@ CLASS z2ui5_cl_cgui_context IMPLEMENTATION.
         ASSIGN lr_return->* TO <return>.
 
         DATA(lv_name) = CONV char30( help-name ).
-        CALL FUNCTION 'F4IF_GET_SHLP_DESCR'
+        lv_function = `F4IF_GET_SHLP_DESCR`.
+        CALL FUNCTION lv_function
           EXPORTING
             shlpname = lv_name
           IMPORTING
@@ -795,7 +1050,8 @@ CLASS z2ui5_cl_cgui_context IMPLEMENTATION.
         " a collective search help: its first elementary one
         ASSIGN COMPONENT `SHLPTYPE` OF STRUCTURE <shlp> TO <comp>.
         IF sy-subrc = 0 AND <comp> = 'SC'.
-          CALL FUNCTION 'F4IF_EXPAND_SEARCHHELP'
+          lv_function = `F4IF_EXPAND_SEARCHHELP`.
+          CALL FUNCTION lv_function
             EXPORTING
               shlp_top = <shlp>
             IMPORTING
@@ -831,7 +1087,8 @@ CLASS z2ui5_cl_cgui_context IMPLEMENTATION.
           RETURN.
         ENDIF.
 
-        CALL FUNCTION 'F4IF_SELECT_VALUES'
+        lv_function = `F4IF_SELECT_VALUES`.
+        CALL FUNCTION lv_function
           EXPORTING
             shlp           = <shlp>
             maxrows        = max
@@ -976,7 +1233,8 @@ CLASS z2ui5_cl_cgui_context IMPLEMENTATION.
         CREATE DATA lr_text TYPE HANDLE lo_text_tab.
         ASSIGN lr_text->* TO <texts>.
         DATA(lt_fields) = VALUE string_table( ( lv_key_field ) ( lv_text_field ) ).
-        DATA(lv_where) = |{ lv_lang_field } = '{ cl_abap_context_info=>get_user_language_abap_format( ) }'|.
+        DATA(lv_where) = |{ lv_lang_field } = '{ sy-langu }'|.
+
         SELECT (lt_fields) FROM (lv_text_table) WHERE (lv_where) INTO CORRESPONDING FIELDS OF TABLE @<texts>.
 
         LOOP AT <tab> ASSIGNING <row>.
@@ -1164,6 +1422,7 @@ CLASS z2ui5_cl_cgui_context IMPLEMENTATION.
   METHOD dtel_docu_check.
 
     DATA lv_object TYPE c LENGTH 60.
+    DATA lv_found  TYPE c LENGTH 60.
 
     IF name IS INITIAL.
       RETURN.
@@ -1171,9 +1430,11 @@ CLASS z2ui5_cl_cgui_context IMPLEMENTATION.
     lv_object = to_upper( name ).
     TRY.
         DATA(lv_table) = `DOKIL`.
-        SELECT SINGLE @abap_true FROM (lv_table)
+        SELECT SINGLE object FROM (lv_table)
           WHERE id = 'DE' AND object = @lv_object AND typ = 'E'
-          INTO @result.
+          INTO @lv_found.
+        result = xsdbool( sy-subrc = 0 ).
+
       CATCH cx_root.
         CLEAR result.
     ENDTRY.
@@ -1222,8 +1483,7 @@ CLASS z2ui5_cl_cgui_context IMPLEMENTATION.
     " a new paragraph; tags <..>, symbols &..& and the headings of the
     " standard template go
     LOOP AT lt_line INTO DATA(ls_line).
-      DATA(lv_part) = replace( val = CONV string( ls_line-tdline ) pcre = `<[^>]*>` with = `` occ = 0 ).
-      lv_part = replace( val = lv_part pcre = `&[A-Z_0-9]+&` with = `` occ = 0 ).
+      DATA(lv_part) = docu_strip( CONV string( ls_line-tdline ) ).
       lv_part = replace( val = lv_part sub = `,,` with = ` ` occ = 0 ).
       IF ls_line-tdformat <> `=` AND ls_line-tdformat <> ` ` AND ls_line-tdformat <> `/=` AND lv_text IS NOT INITIAL.
         INSERT condense( lv_text ) INTO TABLE result.
@@ -1245,7 +1505,8 @@ CLASS z2ui5_cl_cgui_context IMPLEMENTATION.
   METHOD value_check.
 
     DATA lv_where TYPE string.
-    DATA lv_found TYPE abap_bool.
+    DATA lr_found TYPE REF TO data.
+    FIELD-SYMBOLS <found> TYPE any.
 
     result = abap_true.
     IF val IS INITIAL.
@@ -1272,9 +1533,13 @@ CLASS z2ui5_cl_cgui_context IMPLEMENTATION.
       RETURN.
     ENDIF.
     TRY.
-        lv_where = |{ ls_table-field } = @val|.
-        SELECT SINGLE @abap_true FROM (ls_table-table) WHERE (lv_where) INTO @lv_found.
-        result = lv_found.
+        " the value as a literal - a dynamic WHERE names no variable the
+        " same way on every release
+        lv_where = |{ ls_table-field } = '{ replace( val = |{ val }| sub = `'` with = `''` occ = 0 ) }'|.
+        CREATE DATA lr_found LIKE val.
+        ASSIGN lr_found->* TO <found>.
+        SELECT SINGLE (ls_table-field) FROM (ls_table-table) WHERE (lv_where) INTO @<found>.
+        result = xsdbool( sy-subrc = 0 ).
       CATCH cx_root.
         result = abap_true.
     ENDTRY.

@@ -152,7 +152,10 @@ CLASS z2ui5_cl_cgui_sample_05 IMPLEMENTATION.
 
   METHOD output_list.
 
+    " REPORT ... LINE-COUNT 30 - a new page after 30 lines
+    set_line_count( 30 ).
     write( val   = `Airline Connection Date Price`
+
            color = z2ui5_cl_cgui_list=>cs_color-key )->uline( ).
 
     LOOP AT mt_result INTO DATA(ls_flight).

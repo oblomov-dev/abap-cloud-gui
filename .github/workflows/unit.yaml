@@ -1,8 +1,14 @@
 name: unit
 
 # The ABAP Unit tests, run in the transpiled abap2UI5 backend - no SAP system.
-# The popups the report runtime calls are not part of this repository, so the
-# ones it uses are cloned beside it and deployed with it.
+# npm run unit (scripts/unit.mjs) transpiles src/01 and src/02 - classes,
+# interfaces, the tables of the variant and layout stores and their data
+# elements - with the popups the report runtime calls, against
+# @abap2ui5/node-runtime at the release abaplint.jsonc pins, creates the
+# tables in the runtime's SQLite, and runs every test class, the RISK LEVEL
+# DANGEROUS ones of the stores included. It uses the abap2UI5 MCP server as a
+# library (its npm backend and its unit-test runner) - the MCP server's own
+# unit action deploys classes and interfaces only, no tables.
 
 on:
   pull_request:
@@ -23,15 +29,15 @@ jobs:
   unit:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      MCP_SERVER_REF: main
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-    - run: git clone --depth 1 https://github.com/abap2UI5-addons/popups .deps/popups
-    - uses: abap2UI5/mcp-server@v0.3.0
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
-        paths: >-
-          src
-          .deps/popups/src/00
-          .deps/popups/src/z2ui5_cl_popup_get_range.clas.abap
-          .deps/popups/src/z2ui5_cl_popup_to_confirm.clas.abap
-          .deps/popups/src/z2ui5_cl_popup_to_select.clas.abap
-          .deps/popups/src/z2ui5_cl_popup_input_val.clas.abap
+        node-version: '22'
+        cache: 'npm'
+    - run: npm ci
+    - run: git clone --depth 1 https://github.com/abap2UI5-addons/popups .deps/popups
+    - run: git clone --depth 1 --branch "$MCP_SERVER_REF" https://github.com/abap2UI5/mcp-server ../mcp-server
+    - run: npm run unit

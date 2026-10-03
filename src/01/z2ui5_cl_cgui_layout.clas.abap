@@ -1,11 +1,15 @@
 "! Layout of an ALV grid - the classic "Change Layout" dialog as an abap2UI5
 "! app of its own: which columns are shown and in which order, how the rows
 "! are sorted, which columns are summed and which give subtotals. A layout
-"! can be saved under a name, one of them as the default; the caller keeps
-"! them - as selection variants whose name starts with cv_prefix, see
-"! to_variant( ) / from_variants( ). The popup leaves with result-action:
+"! can be saved under a name, one of them as the default, shared with all
+"! users and protected when the store keeps that; the caller keeps them -
+"! in a layout store (z2ui5_if_cgui_layout_store) or as selection variants
+"! whose name starts with cv_prefix, see to_variant( ) / from_variants( ).
+"! The popup leaves with result-action:
 "!   apply  - take over result-layout
-"!   save   - take it over and save it as result-name (result-is_default)
+"!   save   - take it over and save it as result-name (result-is_default,
+"!            result-shared, result-protected)
+
 "!   delete - delete the saved layout result-name
 "! and with no action on cancel.
 CLASS z2ui5_cl_cgui_layout DEFINITION PUBLIC FINAL CREATE PRIVATE.
@@ -47,19 +51,27 @@ CLASS z2ui5_cl_cgui_layout DEFINITION PUBLIC FINAL CREATE PRIVATE.
     TYPES ty_t_row TYPE STANDARD TABLE OF ty_s_row WITH EMPTY KEY.
 
     TYPES:
+      "! a saved layout - shared: every user sees it, protected: only its
+      "! owner changes or deletes it (a layout store with sharing)
       BEGIN OF ty_s_saved,
-        name    TYPE string,
+        name       TYPE string,
         is_default TYPE abap_bool,
-        layout  TYPE z2ui5_cl_cgui_alv=>ty_t_layout,
+        layout     TYPE z2ui5_cl_cgui_alv=>ty_t_layout,
+        shared     TYPE abap_bool,
+        protected  TYPE abap_bool,
+        owner      TYPE string,
       END OF ty_s_saved.
+
     TYPES ty_t_saved TYPE STANDARD TABLE OF ty_s_saved WITH EMPTY KEY.
 
     TYPES:
       BEGIN OF ty_s_result,
-        action  TYPE string,
-        layout  TYPE z2ui5_cl_cgui_alv=>ty_t_layout,
-        name    TYPE string,
+        action     TYPE string,
+        layout     TYPE z2ui5_cl_cgui_alv=>ty_t_layout,
+        name       TYPE string,
         is_default TYPE abap_bool,
+        shared     TYPE abap_bool,
+        protected  TYPE abap_bool,
       END OF ty_s_result.
 
     "! the columns - PUBLIC, the table of the dialog is bound to them
@@ -70,15 +82,20 @@ CLASS z2ui5_cl_cgui_layout DEFINITION PUBLIC FINAL CREATE PRIVATE.
     DATA mv_default  TYPE abap_bool.
     "! the saved layout picked
     DATA mv_selected TYPE string.
+    "! save it shared with all users / protected against changes of others
+    "! - with a layout store that keeps them
+    DATA mv_shared    TYPE abap_bool.
+    DATA mv_protected TYPE abap_bool.
 
     "! layout - the current one, as z2ui5_cl_cgui_alv=>get_layout( )
     "! returns it; saved - the layouts saved; current - the name of the one
-    "! in use
+    "! in use; sharing - the store keeps shared and protected layouts
     CLASS-METHODS factory
       IMPORTING
         layout        TYPE z2ui5_cl_cgui_alv=>ty_t_layout
         saved         TYPE ty_t_saved OPTIONAL
         current       TYPE clike      OPTIONAL
+        sharing       TYPE abap_bool  DEFAULT abap_false
       RETURNING
         VALUE(result) TYPE REF TO z2ui5_cl_cgui_layout.
 
@@ -133,6 +150,7 @@ CLASS z2ui5_cl_cgui_layout DEFINITION PUBLIC FINAL CREATE PRIVATE.
     DATA mt_base   TYPE z2ui5_cl_cgui_alv=>ty_t_layout.
     DATA mt_saved  TYPE ty_t_saved.
     DATA ms_result TYPE ty_s_result.
+    DATA mv_sharing TYPE abap_bool.
 
   PRIVATE SECTION.
 
@@ -159,9 +177,12 @@ CLASS z2ui5_cl_cgui_layout IMPLEMENTATION.
     result->mt_saved = saved.
     result->mt_row   = layout_to_rows( layout ).
     result->mv_selected = current.
+    result->mv_sharing = sharing.
     READ TABLE saved INTO DATA(ls_saved) WITH KEY name = current.
     IF sy-subrc = 0.
-      result->mv_default = ls_saved-is_default.
+      result->mv_default   = ls_saved-is_default.
+      result->mv_shared    = ls_saved-shared.
+      result->mv_protected = ls_saved-protected.
     ENDIF.
 
   ENDMETHOD.
@@ -306,8 +327,10 @@ CLASS z2ui5_cl_cgui_layout IMPLEMENTATION.
         ms_result-layout = rows_to_layout( mt_row ).
         ms_result-name = condense( mv_name ).
         IF ms_result-name IS NOT INITIAL.
-          ms_result-action  = cs_action-save.
+          ms_result-action     = cs_action-save.
           ms_result-is_default = mv_default.
+          ms_result-shared     = xsdbool( mv_sharing = abap_true AND mv_shared = abap_true ).
+          ms_result-protected  = xsdbool( mv_sharing = abap_true AND mv_protected = abap_true ).
         ELSE.
           ms_result-action = cs_action-apply.
         ENDIF.
@@ -330,8 +353,10 @@ CLASS z2ui5_cl_cgui_layout IMPLEMENTATION.
         IF sy-subrc = 0.
           mt_row = layout_to_rows( layout_merge( base  = mt_base
                                                  saved = ls_saved-layout ) ).
-          mv_name    = ls_saved-name.
-          mv_default = ls_saved-is_default.
+          mv_name      = ls_saved-name.
+          mv_default   = ls_saved-is_default.
+          mv_shared    = ls_saved-shared.
+          mv_protected = ls_saved-protected.
         ELSE.
           mt_row = layout_to_rows( mt_base ).
         ENDIF.
@@ -409,9 +434,10 @@ CLASS z2ui5_cl_cgui_layout IMPLEMENTATION.
       LOOP AT mt_saved INTO DATA(ls_saved).
         lo_items->tag( n = `Item` ns = `core`
             )->a( n = `key`  t = ls_saved-name
-            )->a( n = `text` t = COND #( WHEN ls_saved-is_default = abap_true
-                                         THEN |{ ls_saved-name } ({ 'Default'(004) })|
-                                         ELSE ls_saved-name ) ).
+            )->a( n = `text` t = |{ ls_saved-name }|
+                              && |{ COND #( WHEN ls_saved-is_default = abap_true THEN | ({ 'Default'(004) })| ) }|
+                              && |{ COND #( WHEN ls_saved-shared = abap_true AND ls_saved-owner IS NOT INITIAL
+                                            THEN | - { ls_saved-owner }| ) }| ).
       ENDLOOP.
       lo_saved->tag( `Button`
           )->a( n = `icon`    v = `sap-icon://delete`
@@ -462,13 +488,13 @@ CLASS z2ui5_cl_cgui_layout IMPLEMENTATION.
         )->a( n = `type`    v = `Transparent`
         )->a( n = `tooltip` t = CONV #( 'Up'(014) )
         )->a( n = `press`   v = client->_event( val   = cs_event-up
-                                                t_arg = VALUE #( ( `${NAME}` ) ) )
+                                                arg   = `${NAME}` )
         )->tag( `Button`
         )->a( n = `icon`    v = `sap-icon://navigation-down-arrow`
         )->a( n = `type`    v = `Transparent`
         )->a( n = `tooltip` t = CONV #( 'Down'(015) )
         )->a( n = `press`   v = client->_event( val   = cs_event-down
-                                                t_arg = VALUE #( ( `${NAME}` ) ) ) ).
+                                                arg   = `${NAME}` ) ).
 
     lo_content->ele( `HBox`
         )->a( n = `alignItems` v = `Center`
@@ -481,6 +507,16 @@ CLASS z2ui5_cl_cgui_layout IMPLEMENTATION.
         )->tag( `CheckBox`
         )->a( n = `selected` v = client->_bind( mv_default )
         )->a( n = `text`     t = CONV #( 'Default layout'(017) )
+        )->a( n = `class`    v = `sapUiSmallMarginBegin`
+        )->tag( `CheckBox`
+        )->a( n = `selected` v = client->_bind( mv_shared )
+        )->a( n = `text`     t = CONV #( 'Shared'(020) )
+        )->a( n = `visible`  b = mv_sharing
+        )->a( n = `class`    v = `sapUiSmallMarginBegin`
+        )->tag( `CheckBox`
+        )->a( n = `selected` v = client->_bind( mv_protected )
+        )->a( n = `text`     t = CONV #( 'Protected'(021) )
+        )->a( n = `visible`  b = mv_sharing
         )->a( n = `class`    v = `sapUiSmallMarginBegin` ).
 
     lo_dialog->ele( `buttons`

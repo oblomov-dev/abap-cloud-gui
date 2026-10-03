@@ -128,7 +128,17 @@ CLASS z2ui5_cl_cgui_sample_10 IMPLEMENTATION.
 
     " every run starts from all flights
     mock_data( ).
-    DELETE mt_flight WHERE carrid NOT IN s_carrid.
+    " range_check( ) as IN - the transpiled runtime's IN knows I EQ, E EQ
+    " and I CP only, and the selection can be an interval
+    DATA(lt_all) = mt_flight.
+    CLEAR mt_flight.
+    LOOP AT lt_all INTO DATA(ls_all).
+      IF z2ui5_cl_cgui_context=>range_check( val   = ls_all-carrid
+                                             range = s_carrid ) = abap_true.
+        INSERT ls_all INTO TABLE mt_flight.
+      ENDIF.
+    ENDLOOP.
+
     IF mt_flight IS INITIAL.
       RETURN.
     ENDIF.
@@ -143,7 +153,11 @@ CLASS z2ui5_cl_cgui_sample_10 IMPLEMENTATION.
 
   METHOD show_tree.
 
-    DATA ls_sum TYPE ty_s_flight.
+    DATA ls_sum     TYPE ty_s_flight.
+    DATA lv_carrid  TYPE ty_s_flight-carrid.
+    DATA lv_connid  TYPE ty_s_flight-connid.
+    DATA lv_airline TYPE i.
+    DATA lv_first   TYPE i.
 
     mo_tree = tree( )->set_hierarchy_header( `Airline / Connection / Date`
         )->set_checkboxes( event  = abap_true
@@ -155,31 +169,39 @@ CLASS z2ui5_cl_cgui_sample_10 IMPLEMENTATION.
 
     DATA(lt_flight) = mt_flight.
     SORT lt_flight BY carrid connid fldate.
-    LOOP AT lt_flight INTO DATA(ls_flight) GROUP BY ls_flight-carrid INTO DATA(lt_carrier).
-      " the airline with the sums of its flights
-      CLEAR ls_sum.
-      LOOP AT GROUP lt_carrier INTO DATA(ls_member).
-        ls_sum-seatsocc = ls_sum-seatsocc + ls_member-seatsocc.
-        ls_sum-seatsmax = ls_sum-seatsmax + ls_member-seatsmax.
-      ENDLOOP.
-      ls_sum-carrid = ls_member-carrid.
-      DATA(lv_name) = VALUE #( mt_airline[ carrid = ls_member-carrid ]-name OPTIONAL ).
-      DATA(lv_airline) = mo_tree->add_node( text = |{ ls_member-carrid } { lv_name }|
-                                            data = ls_sum ).
+    " sorted - a new airline or connection starts a node of its own
+    LOOP AT lt_flight INTO DATA(ls_flight).
+      IF lv_airline = 0 OR ls_flight-carrid <> lv_carrid.
+        " the airline with the sums of its flights
+        lv_carrid = ls_flight-carrid.
+        CLEAR: lv_connid, ls_sum.
+        LOOP AT lt_flight INTO DATA(ls_member) WHERE carrid = lv_carrid.
+          ls_sum-seatsocc = ls_sum-seatsocc + ls_member-seatsocc.
+          ls_sum-seatsmax = ls_sum-seatsmax + ls_member-seatsmax.
+        ENDLOOP.
+        ls_sum-carrid = lv_carrid.
+        DATA(lv_name) = VALUE #( mt_airline[ carrid = lv_carrid ]-name OPTIONAL ).
+        lv_airline = mo_tree->add_node( text = |{ lv_carrid } { lv_name }|
+                                        data = ls_sum ).
+        IF lv_first = 0.
+          lv_first = lv_airline.
+        ENDIF.
+      ENDIF.
 
       " the connections - their flights come when they are opened
-      LOOP AT GROUP lt_carrier INTO ls_member GROUP BY ls_member-connid.
+      IF ls_flight-connid <> lv_connid.
+        lv_connid = ls_flight-connid.
         mo_tree->add_node( parent = lv_airline
-                           text   = |{ ls_member-connid }|
+                           text   = |{ lv_connid }|
                            lazy   = abap_true
-                           value  = |{ ls_member-carrid }{ ls_member-connid }| ).
-      ENDLOOP.
-
-      " the first airline is open
-      IF lv_airline = 1.
-        mo_tree->expand( lv_airline ).
+                           value  = |{ lv_carrid }{ lv_connid }| ).
       ENDIF.
     ENDLOOP.
+
+    " the first airline is open
+    IF lv_first <> 0.
+      mo_tree->expand( lv_first ).
+    ENDIF.
 
     mo_tree->set_column_text( name = `SEATSOCC` text = `Occupied`
         )->set_column_text( name = `SEATSMAX` text = `Capacity`
@@ -259,7 +281,7 @@ CLASS z2ui5_cl_cgui_sample_10 IMPLEMENTATION.
 
     write( val   = |Flight { ls_flight-carrid } { ls_flight-connid }|
            color = z2ui5_cl_cgui_list=>cs_color-key )->new_line( )->uline( ).
-    write( val = `Date`     len = 12 )->write( val = ls_flight-fldate )->new_line( ).
+    write( val = `Date`     len = 12 )->write( ls_flight-fldate )->new_line( ).
     write( val = `Price`    len = 12 )->write( val      = ls_flight-price
                                                currency = ls_flight-currency )->write( ls_flight-currency )->new_line( ).
     write( val = `Occupied` len = 12 )->write( |{ ls_flight-seatsocc } / { ls_flight-seatsmax }| )->new_line( ).
@@ -292,11 +314,12 @@ CLASS z2ui5_cl_cgui_sample_10 IMPLEMENTATION.
 
   ENDMETHOD.
 
-  METHOD at_tree_checkbox ##NEEDED.
+  METHOD at_tree_checkbox.
 
-    " CHECKBOX_CHANGE - the sum at once
+    " CHECKBOX_CHANGE - the node and the sum at once
     DATA(lv_flights) = free_seats( ).
-    message( |{ mv_free } free seats on { lv_flights } ticked flights| ).
+    message( |{ mo_tree->get_node( key )-text } { COND #( WHEN checked = abap_true THEN `ticked` ELSE `cleared` ) }: | &&
+             |{ mv_free } free seats on { lv_flights } ticked flights| ).
 
   ENDMETHOD.
 

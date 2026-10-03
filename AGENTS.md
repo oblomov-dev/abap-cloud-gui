@@ -13,14 +13,22 @@ list, ALV grid, messages. Language of code, comments, commits and docs:
 
 | Path | Content |
 |---|---|
-| `src/01` | the framework: `z2ui5_cl_cgui_report` (report runtime), `_selscreen`, `_list`, `_alv`, `_variant` (selection variants), `_context` (RTTI and conversion helpers), `z2ui5_cx_cgui_error` |
-| `src/02` | samples `z2ui5_cl_cgui_sample_01` … `_07` |
-| `src/03` | tools: the selection screen painter `z2ui5_cl_cgui_painter` and its code generator `_painter_code` |
-| `tools/report2cloud` | `report2cloud`, a Node CLI (no ABAP object) that converts a classic report into a report class of this addon - see below |
+| `src/01` | the framework: `z2ui5_cl_cgui_report` (report runtime), `_selscreen`, `_list`, `_alv`, `_tree`, `_layout` (the layout dialog of the ALV), `_popup`, `_range`, `_select`, `_variant` (selection variants), `_context` (RTTI and conversion helpers), `z2ui5_cx_cgui_error`; the two stores: `z2ui5_if_cgui_variant_store` with `z2ui5_cl_cgui_variant_db` (table `Z2UI5_CGUI_VAR`, data elements `Z2UI5_CGUI_VAR_*`) and `z2ui5_if_cgui_layout_store` with `z2ui5_cl_cgui_layout_db` (table `Z2UI5_CGUI_LAY`) |
+| `src/02` | samples `z2ui5_cl_cgui_sample_01` … `_10` |
+| `tools/report2cloud` | `report2cloud`, a Node CLI (no ABAP object) that converts a classic report into a report class of this addon - THE generator of this repository, see below |
+| `scripts/unit.mjs` | `npm run unit` - the ABAP Unit tests in the transpiled backend, tables included |
 | `.github/abaplint` | the Cloud and 7.02 gate configs; `abaplint.jsonc` at the root is the v750 inner loop |
 
-Naming: every class is `Z2UI5_CL_CGUI_*` / `Z2UI5_CX_CGUI_*` (abaplint
-`object_naming`). Only `CLAS` and `DEVC` objects — no dictionary objects.
+Naming: every class is `Z2UI5_CL_CGUI_*` / `Z2UI5_CX_CGUI_*`, every interface
+`Z2UI5_IF_CGUI_*` (abaplint `object_naming`). Only `CLAS`, `INTF`, `DEVC`,
+`TABL` and `DTEL` objects (`allowed_object_types`) - no programs, no
+function groups, no tooling that runs on the stack: everything under `src/`
+is ABAP Cloud ready, transpilable to Node and downportable to 7.02. The
+tables and data elements use built-in types (`CHAR`, `STRG`) or data
+elements that are released on ABAP Cloud and exist on 7.02 (`MANDT`,
+`TIMESTAMPL`, `TZNTSTMPL`, `CHAR40`) - never an on-premise one such as
+`SEOCLSNAME` or `XUBNAME`. Report and class generation runs in Node only
+(`tools/report2cloud`).
 
 ## Dependencies
 
@@ -47,9 +55,18 @@ and layout-management have no release tags and are resolved from `main`.
 
 ## Targets
 
-ABAP Cloud, Standard ABAP and NW 7.02. Write 7.50 syntax that downports;
-check with `npm run lint`, `npm run check:cloud`, `npm run check:702`. UI5 1.71
-is the floor — `npm run check:abap2ui5` (the abap2UI5-linter).
+Three release targets and one runtime, every one a CI gate with no excludes:
+
+- **ABAP Cloud** - released APIs only, `npm run check:cloud`;
+- **Standard ABAP** - 7.50 syntax that downports, `npm run lint` (its
+  API set is the intersection of ABAP Cloud and 7.02);
+- **NW 7.02** - a downported copy, `npm run check:702`;
+- **the transpiled Node runtime** - `npm run unit` runs every ABAP Unit test
+  there, the DANGEROUS ones of the two stores against SQLite.
+
+No regular expressions (`npm run check:regex`). UI5 1.71 is the floor -
+`npm run check:abap2ui5` (the abap2UI5-linter). `npm run check` runs the
+static gates.
 
 ## Rules learned the hard way
 
@@ -91,8 +108,12 @@ is the floor — `npm run check:abap2ui5` (the abap2UI5-linter).
   to `selected` - so a table that brings a `ZZSELKZ` comes up checked. The
   popup heads a column with the DDIC label of its type, and with `STRING`
   for a string: give value lists character types.
-- **Variants live in the browser's local storage** - this repository has no
-  table of its own. The invisible `z2ui5:Storage` control reads the catalog
+- **Variants live in table `Z2UI5_CGUI_VAR` by default**
+  (`z2ui5_cl_cgui_variant_db`: shared and protected variants, one owner each,
+  set after `initialization( )` unless it chose otherwise);
+  `set_variant_store( store )` plugs in another `z2ui5_if_cgui_variant_store`,
+  `set_variant_store( )` without one keeps them in the browser's local
+  storage. For the browser's storage, the invisible `z2ui5:Storage` control reads the catalog
   into the PUBLIC `mv_cgui_variants` and fires `finished` while the first
   view still renders - the wire needs `check_queue_last`, or the event is
   dropped. `STORE_DATA` is called from a handler with a payload composed as
@@ -101,12 +122,34 @@ is the floor — `npm run check:abap2ui5` (the abap2UI5-linter).
   empty VALUE deletes the key. Keep bound and stored value equal after a
   write, or the control reports again on the next render. A variant in the
   URL is read after `initialization( )`, so it wins over `set_variant( )`.
-- **The painter's code must compile as it is.** A change to
-  `z2ui5_cl_cgui_painter_code` is checked by generating a class (the
-  painter's Sample, plus a select-option with `c LENGTH`) and running the
-  three abaplint gates over it as a class of `src/02`, not only by the unit
-  tests. The preview uses `z2ui5_cl_cgui_selscreen` with `preview`: nothing
-  is bound, a flag renders its value literally.
+- **ALV layouts live in table `Z2UI5_CGUI_LAY` by default**
+  (`z2ui5_cl_cgui_layout_db`, one namespace per report class and ALV handle -
+  the attribute `alv( )` shows): shared and protected like the variants, and
+  the default layout is personal - the store keeps one per user and counts
+  the flag for its owner only. `set_layout_store( store )` plugs in another
+  `z2ui5_if_cgui_layout_store`; `set_layout_store( )` without one keeps the
+  layouts with the selection variants (`#L#` names). The report tests plug in
+  an in-memory store, so only the store's own DANGEROUS test writes the table.
+- **ABAP Cloud has no `WRITE ... TO`, no spool, no SAP memory, no background
+  job API that is also on 7.02.** The list formats with string templates
+  (an edit mask by hand, the date formats from the user's separator, a
+  currency's decimals from ISO 4217 - TCURX is not released); Print hands the
+  output to the browser as a text file; SET / GET PARAMETER ID live in the
+  browser's local storage; `cgui_run_in_background( )` runs a report without
+  a browser, from an application job of the customer's. UTF-8, base64 and
+  URL escaping are `z2ui5_cl_cgui_context=>conv_*( )` / `url_escape( )` -
+  the codepage classes named as strings, as abap2UI5 does it.
+- **The transpiled runtime differs - write what runs on both.** `CREATE DATA
+  r LIKE tab` copies the rows along (`CLEAR` the new table); `SORT ... BY
+  (otab)` and `SORT ... BY (name)` sort nothing (the ALV sorts with a merge
+  sort of its own); `WIDTH`/`ALIGN`/`PAD` and `CURRENCY` of a string template
+  are ignored or not implemented (`z2ui5_cl_cgui_context=>text_align( )`, a
+  NUMC); `cl_abap_structdescr=>get( )` and `cl_abap_tabledescr=>get( )` are
+  stubs (`create( )`); a parameter named like a reserved JavaScript word
+  (`protected`) breaks the module; `round( )` takes `dec = 0` only. A data
+  element with fixed values in a test is `XSDBOOLEAN` (see above), a typed
+  test field one of the data elements both the API set and the runtime know
+  (`LAND1`).
 - **The message popover is part of the screen and opens in a roundtrip of
   its own.** It is a dependent of the page; the footer button toggles it in
   the browser (`control_by_id` `toggleBy`, no roundtrip). Opened by the
@@ -125,8 +168,8 @@ is the floor — `npm run check:abap2ui5` (the abap2UI5-linter).
   `BEGIN OF`. abaplint `wrong_abapdoc_position` checks it in all three gates.
 - **No regular expressions.** POSIX (`FIND REGEX`, `matches( regex = )`,
   `cl_abap_regex`) is deprecated from 7.55 on and warns in the extended
-  check; PCRE does not exist on 7.02. Use `FIND`, `CS` / `CN` / `CA` /
-  `NA` and `substring( )`. abaplint has no rule for it:
+  check; PCRE (`FIND PCRE`, `pcre =`) does not exist on 7.02. Use `FIND`,
+  `CS` / `CN` / `CA` / `NA` and `substring( )`. abaplint has no rule for it:
   `npm run check:regex` (`scripts/check-regex.mjs`) fails on any regex in
   `src`.
 - **The report dispatcher is one IF/ELSEIF chain** over `check_on_init`,
@@ -143,10 +186,8 @@ parses with `@abaplint/core` at the version of `@abaplint/cli`, writes the
 class in abapGit format plus a migration report, and refuses with
 `file:row:col` what has no counterpart (dynpros, batch input, `SUBMIT`,
 native SQL, ...). The mapping table and the refusals are in its README.
-`src/03/z2ui5_cl_cgui_converter` is the in-system converter (ADT console,
-reads the report from the system, takes over what it does not translate);
-report2cloud is the offline, CI-gated one that refuses instead - neither
-replaces the other.
+It is the only converter and the only generator of this repository - there
+is no ABAP tooling on the stack.
 
 - **It writes against the API of `src/01` as it is.** A change to a
   signature of `z2ui5_cl_cgui_report`, `_selscreen`, `_list` or `_alv`
@@ -165,9 +206,8 @@ replaces the other.
 - **A class that lints is not a class that runs.**
   `npm run test:report2cloud:runtime` (opt-in; needs an mcp-server checkout
   at `MCP_SERVER_HOME` or `../mcp-server`, git and network) transpiles the
-  corpus classes with `src/01` (without the server-side variant store,
-  whose table the transpiler cannot type), the popups and the seeded flight
-  table stubs
+  corpus classes with `src/01` (its tables and data elements included),
+  the popups and the seeded flight table stubs
   against `@abap2ui5/node-runtime` and operates every report through the
   JSON protocol of the frontend (mcp-server's app client): fields, Execute,
   hotspots, grid rows, the F4 popup (a table of the agent snapshot, picked
@@ -189,7 +229,7 @@ replaces the other.
   rule above). Run it after a change to the converter or to `src/01`.
 - **It follows the rules above**: report globals become PUBLIC attributes
   (never PRIVATE), the selection screen binds them by reference, ABAP SQL is
-  written in strict mode, chains follow the house layout of the painter.
+  written in strict mode, chains follow the house layout of the samples.
 - **The generated files are abapGit's format** - BOM in the sidecar, LF,
   no trailing blanks, no line over 255 characters; the tests check every
   generated file.
@@ -200,9 +240,12 @@ replaces the other.
 The views can be driven without an SAP system: transpile `src` plus the
 popups used against `@abap2ui5/node-runtime` (the mcp-server's
 `lib/npm-backend.mjs` `buildNpm`), start `lib/npm-host.mjs`, and drive the
-app with Playwright. The unit tests run the same way in CI
-(`.github/workflows/unit.yaml`); locally
-`node <mcp-server>/scripts/ci-unit.mjs` with the same paths.
+app with Playwright. The unit tests run the same way, in CI
+(`.github/workflows/unit.yaml`) and locally: `npm run unit`
+(`scripts/unit.mjs`, the build of the report2cloud runtime test with the test
+includes; mcp-server at `MCP_SERVER_HOME` or `../mcp-server`, the popups at
+`.deps/popups`). The MCP server's own unit action deploys classes and
+interfaces only - no tables - hence the script.
 Where the UI5 CDN (`sdk.openui5.org`) is not reachable, serve the
 `@openui5/*/src` packages the linter installs in `node_modules` through a
 Playwright `page.route( )`, with `bypassCSP: true` for the source bootstrap.

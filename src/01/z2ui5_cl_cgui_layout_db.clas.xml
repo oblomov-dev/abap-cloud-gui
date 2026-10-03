@@ -3,14 +3,23 @@
  <asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">
   <asx:values>
    <VSEOCLASS>
-    <CLSNAME>Z2UI5_CL_CGUI_CONVERTER_RUN</CLSNAME>
+    <CLSNAME>Z2UI5_CL_CGUI_LAYOUT_DB</CLSNAME>
     <LANGU>E</LANGU>
-    <DESCRIPT>cloud gui - converter in the ADT console</DESCRIPT>
+    <DESCRIPT>cloud gui - ALV layouts on the server</DESCRIPT>
     <STATE>1</STATE>
     <CLSCCINCL>X</CLSCCINCL>
     <FIXPT>X</FIXPT>
     <UNICODE>X</UNICODE>
+    <WITH_UNIT_TESTS>X</WITH_UNIT_TESTS>
    </VSEOCLASS>
+   <TPOOL>
+    <item>
+     <ID>I</ID>
+     <KEY>001</KEY>
+     <ENTRY>Layout &amp;1 is protected by user &amp;2</ENTRY>
+     <LENGTH>60</LENGTH>
+    </item>
+   </TPOOL>
   </asx:values>
  </asx:abap>
 </abapGit>

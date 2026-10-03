@@ -1,25 +1,57 @@
 CLASS ltcl_test DEFINITION DEFERRED.
 CLASS z2ui5_cl_cgui_report DEFINITION LOCAL FRIENDS ltcl_test.
 
-" the handler of a converted SALV report
-CLASS ltcl_salv_handler DEFINITION FINAL FOR TESTING.
+" a variant store of a customer - in memory, plugged in with
+" set_variant_store( ); it travels in the draft with the report
+CLASS ltcl_variant_store DEFINITION FINAL.
   PUBLIC SECTION.
-    CLASS-DATA gv_row      TYPE i.
-    CLASS-DATA gv_column   TYPE string.
-    CLASS-DATA gv_function TYPE string.
-    CLASS-METHODS on_double_click FOR EVENT double_click OF cl_salv_events_table
-      IMPORTING row column.
-    CLASS-METHODS on_added_function FOR EVENT added_function OF cl_salv_events_table
-      IMPORTING e_salv_function.
+    INTERFACES z2ui5_if_cgui_variant_store.
+    DATA mt_variant TYPE z2ui5_cl_cgui_variant=>ty_t_variant.
 ENDCLASS.
 
-CLASS ltcl_salv_handler IMPLEMENTATION.
-  METHOD on_double_click.
-    gv_row = row.
-    gv_column = column.
+" a layout store of a customer - in memory, plugged in with
+" set_layout_store( ); the tests keep the default store, the table
+" Z2UI5_CGUI_LAY, out of the way with it
+CLASS ltcl_layout_store DEFINITION FINAL.
+  PUBLIC SECTION.
+    INTERFACES z2ui5_if_cgui_layout_store.
+    DATA mt_layout TYPE z2ui5_cl_cgui_layout=>ty_t_saved.
+ENDCLASS.
+
+CLASS ltcl_layout_store IMPLEMENTATION.
+  METHOD z2ui5_if_cgui_layout_store~load.
+    result = mt_layout.
   ENDMETHOD.
-  METHOD on_added_function.
-    gv_function = e_salv_function.
+  METHOD z2ui5_if_cgui_layout_store~save.
+    IF layout-is_default = abap_true.
+      LOOP AT mt_layout REFERENCE INTO DATA(lr_layout).
+        lr_layout->is_default = abap_false.
+      ENDLOOP.
+    ENDIF.
+    DELETE mt_layout WHERE name = layout-name.
+    INSERT layout INTO TABLE mt_layout.
+  ENDMETHOD.
+  METHOD z2ui5_if_cgui_layout_store~delete.
+    DELETE mt_layout WHERE name = name.
+  ENDMETHOD.
+  METHOD z2ui5_if_cgui_layout_store~check_sharing.
+    result = abap_true.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS ltcl_variant_store IMPLEMENTATION.
+  METHOD z2ui5_if_cgui_variant_store~load.
+    result = mt_variant.
+  ENDMETHOD.
+  METHOD z2ui5_if_cgui_variant_store~save.
+    DELETE mt_variant WHERE name = variant-name.
+    INSERT variant INTO TABLE mt_variant.
+  ENDMETHOD.
+  METHOD z2ui5_if_cgui_variant_store~delete.
+    DELETE mt_variant WHERE name = name.
+  ENDMETHOD.
+  METHOD z2ui5_if_cgui_variant_store~check_sharing.
+    result = abap_false.
   ENDMETHOD.
 ENDCLASS.
 
@@ -48,13 +80,12 @@ CLASS ltcl_report DEFINITION INHERITING FROM z2ui5_cl_cgui_report FINAL.
     DATA mt_row      TYPE ty_t_row.
     DATA mv_alv      TYPE abap_bool.
     DATA mv_tree     TYPE abap_bool.
-    DATA mv_salv     TYPE abap_bool.
-    DATA mo_salv     TYPE REF TO z2ui5_cl_cgui_salv.
+
     DATA mv_end      TYPE abap_bool.
     DATA mv_secret   TYPE string.
     DATA mv_lsel_row TYPE i.
     DATA mv_ucomm    TYPE string.
-    DATA p_check     TYPE xfeld.
+    DATA p_check     TYPE xsdboolean.
     DATA mv_block    TYPE string.
     DATA mv_window   TYPE abap_bool.
     DATA mv_exit     TYPE string.
@@ -137,6 +168,8 @@ CLASS ltcl_test DEFINITION FINAL FOR TESTING
     METHODS f4_keeps_other_lines FOR TESTING.
     METHODS popups_of_the_project FOR TESTING.
     METHODS alv_layout_default FOR TESTING.
+    METHODS alv_layout_without_store FOR TESTING.
+
     METHODS value_check_and_block FOR TESTING.
     METHODS footer_print_function_key FOR TESTING.
     METHODS alv_paging_maps_rows FOR TESTING.
@@ -151,7 +184,6 @@ CLASS ltcl_test DEFINITION FINAL FOR TESTING
     METHODS f4_in_alv_cell FOR TESTING.
     METHODS tree_expand_and_node FOR TESTING.
     METHODS draft_serializable FOR TESTING.
-    METHODS salv_events_to_handlers FOR TESTING.
     METHODS draft_references FOR TESTING.
     METHODS serialize
       IMPORTING
@@ -215,19 +247,6 @@ CLASS ltcl_report IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD start_of_selection.
-
-    IF mv_salv = abap_true.
-      " as the converter writes a CL_SALV_TABLE report
-      mt_row = VALUE #( ( carrid = `LH` seats = 1 )
-                        ( carrid = `AA` seats = 2 ) ).
-      mo_salv = z2ui5_cl_cgui_salv=>factory( alv    = alv( mt_row )
-                                             report = me ).
-      mo_salv->get_functions( )->add_function( name = `ZBOOK`
-                                               text = `Book` ).
-      mo_salv->get_event( )->set_handler( class = `LTCL_SALV_HANDLER` ).
-      mo_salv->display( ).
-      RETURN.
-    ENDIF.
 
     IF mv_tree = abap_true.
       DATA(lo_tree) = tree( ).
@@ -467,6 +486,9 @@ CLASS ltcl_test IMPLEMENTATION.
 
   METHOD init.
 
+    IF mo_cut->mo_cgui_lay_store IS NOT BOUND AND mo_cut->mv_cgui_lay_none = abap_false.
+      mo_cut->set_layout_store( NEW ltcl_layout_store( ) ).
+    ENDIF.
     mo_client->mv_init = abap_true.
     mo_cut->z2ui5_if_app~main( mo_client ).
     mo_client->mv_init = abap_false.
@@ -705,7 +727,7 @@ CLASS ltcl_test IMPLEMENTATION.
     mo_report->p_hidden = `X`.
     mo_report->s_date = VALUE #( ( sign = `I` option = `BT` low = `20260101` high = `20260131` ) ).
 
-    DATA(lv_link) = mo_cut->get_link( skip_screen = abap_true ).
+    DATA(lv_link) = mo_cut->get_link( abap_true ).
 
     cl_abap_unit_assert=>assert_char_cp( act = lv_link
                                          exp = `https://host/sap/bc/z2ui5?sap-client=100&app_start=ltcl_report*` ).
@@ -732,10 +754,10 @@ CLASS ltcl_test IMPLEMENTATION.
 
     init( ).
 
-    cl_abap_unit_assert=>assert_true( xsdbool( line_exists( mo_client->mt_action[
-        table_line = |{ z2ui5_if_client=>cs_event-keyboard_shortcut }:F8\|CGUI_EXECUTE\|MAIN| ] ) ) ).
-    cl_abap_unit_assert=>assert_true( xsdbool( line_exists( mo_client->mt_action[
-        table_line = |{ z2ui5_if_client=>cs_event-keyboard_shortcut }:F3\|CGUI_BACK\|MAIN| ] ) ) ).
+    DATA(lv_f8) = |{ z2ui5_if_client=>cs_event-keyboard_shortcut }:F8\|CGUI_EXECUTE\|MAIN|.
+    DATA(lv_f3) = |{ z2ui5_if_client=>cs_event-keyboard_shortcut }:F3\|CGUI_BACK\|MAIN|.
+    cl_abap_unit_assert=>assert_true( xsdbool( line_exists( mo_client->mt_action[ table_line = lv_f8 ] ) ) ).
+    cl_abap_unit_assert=>assert_true( xsdbool( line_exists( mo_client->mt_action[ table_line = lv_f3 ] ) ) ).
 
   ENDMETHOD.
 
@@ -878,7 +900,11 @@ CLASS ltcl_test IMPLEMENTATION.
     init( ).
     mo_cut->popup_to_confirm( question = `Sure?`
                               ucomm    = `DO_IT` ).
-    cl_abap_unit_assert=>assert_true( xsdbool( mo_client->mo_called IS INSTANCE OF z2ui5_cl_cgui_popup ) ).
+    TRY.
+        cl_abap_unit_assert=>assert_bound( CAST z2ui5_cl_cgui_popup( mo_client->mo_called ) ).
+      CATCH cx_sy_move_cast_error.
+        cl_abap_unit_assert=>fail( `not a z2ui5_cl_cgui_popup` ).
+    ENDTRY.
 
     " OK leaves with the user command
     mo_client->mv_event = `CGUI_POP_OK`.
@@ -890,7 +916,11 @@ CLASS ltcl_test IMPLEMENTATION.
     mo_cut->mv_cgui_value_field = `S_CODE`.
     mo_cut->value_help_popup( tab = VALUE ty_t_pick( ( value = `A` ) ( value = `B` ) )
                               col = `VALUE` ).
-    cl_abap_unit_assert=>assert_true( xsdbool( mo_client->mo_called IS INSTANCE OF z2ui5_cl_cgui_select ) ).
+    TRY.
+        cl_abap_unit_assert=>assert_bound( CAST z2ui5_cl_cgui_select( mo_client->mo_called ) ).
+      CATCH cx_sy_move_cast_error.
+        cl_abap_unit_assert=>fail( `not a z2ui5_cl_cgui_select` ).
+    ENDTRY.
 
   ENDMETHOD.
 
@@ -919,9 +949,13 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals( act = mo_cut->mv_cgui_layout
                                         exp = `MINE` ).
     cl_abap_unit_assert=>assert_false( xsdbool( mo_client->mv_view CS `sortProperty="SEATS"` ) ).
-    " kept as a variant - but none the variant popup offers
+    " kept in the layout store, under the attribute the ALV shows
+    DATA(lo_store) = CAST ltcl_layout_store( mo_cut->mo_cgui_lay_store ).
+    cl_abap_unit_assert=>assert_true( lo_store->mt_layout[ name = `MINE` ]-is_default ).
+    cl_abap_unit_assert=>assert_equals( act = mo_cut->layout_handle( )
+                                        exp = `MT_ROW` ).
     DATA(lt_catalog) = mo_cut->variant_catalog( ).
-    cl_abap_unit_assert=>assert_true( xsdbool( line_exists( lt_catalog[ name = `#L#MINE` ] ) ) ).
+    cl_abap_unit_assert=>assert_false( xsdbool( line_exists( lt_catalog[ name = `#L#MINE` ] ) ) ).
 
     " the next run starts with the default layout
     event( z2ui5_cl_cgui_report=>cs_ucomm-back ).
@@ -933,7 +967,39 @@ CLASS ltcl_test IMPLEMENTATION.
 
   ENDMETHOD.
 
+  METHOD alv_layout_without_store.
+
+    " no layout store - the layouts are kept with the selection variants
+    mo_cut->set_layout_store( ).
+    init( ).
+    mo_report->p_carrid = `LH`.
+    mo_report->mv_alv = abap_true.
+    event( z2ui5_cl_cgui_report=>cs_ucomm-execute ).
+
+    event( z2ui5_cl_cgui_alv=>cs_event-layout ).
+    DATA(lo_layout) = CAST z2ui5_cl_cgui_layout( mo_client->mo_called ).
+
+    lo_layout->mt_row[ name = `SEATS` ]-visible = abap_false.
+    lo_layout->mv_name = `MINE`.
+    lo_layout->mv_default = abap_true.
+    mo_client->mv_event = z2ui5_cl_cgui_layout=>cs_event-ok.
+    lo_layout->z2ui5_if_app~main( mo_client ).
+    CLEAR mo_client->mv_event.
+    mo_client->mo_prev = lo_layout.
+    mo_client->mv_navigated = abap_true.
+    mo_cut->z2ui5_if_app~main( mo_client ).
+    mo_client->mv_navigated = abap_false.
+
+    cl_abap_unit_assert=>assert_equals( act = mo_cut->mv_cgui_layout
+                                        exp = `MINE` ).
+    " kept as a variant - but none the variant popup offers
+    DATA(lt_catalog) = mo_cut->variant_catalog( ).
+    cl_abap_unit_assert=>assert_true( xsdbool( line_exists( lt_catalog[ name = `#L#MINE` ] ) ) ).
+
+  ENDMETHOD.
+
   METHOD value_check_and_block.
+
 
     init( ).
     mo_report->p_carrid = `LH`.
@@ -1108,11 +1174,9 @@ CLASS ltcl_test IMPLEMENTATION.
                                         exp = z2ui5_cl_cgui_list=>cs_color-positive ).
     cl_abap_unit_assert=>assert_equals( act = lt_item[ 2 ]-color
                                         exp = z2ui5_cl_cgui_list=>cs_color-negative ).
-    " as the classic WRITE: day and month in the order of the user's format
-    DATA lv_expected TYPE c LENGTH 10.
-    WRITE CONV d( '20261002' ) TO lv_expected DDMMYY.
+    " as the classic WRITE ... DDMMYY: day, month, year without separators
     cl_abap_unit_assert=>assert_equals( act = lt_item[ 3 ]-text
-                                        exp = condense( lv_expected ) ).
+                                        exp = `021026` ).
 
   ENDMETHOD.
 
@@ -1262,7 +1326,7 @@ CLASS ltcl_test IMPLEMENTATION.
     " a tick in the browser reaches the node with the next event
     mo_cut->mo_cgui_tree->set_checkboxes( ).
     mo_cut->mt_cgui_tree_view[ 2 ]-checked = abap_true.
-    event( name = z2ui5_cl_cgui_tree=>cs_event-expand_all ).
+    event( z2ui5_cl_cgui_tree=>cs_event-expand_all ).
     cl_abap_unit_assert=>assert_equals( act = mo_cut->mo_cgui_tree->get_checked( )
                                         exp = VALUE z2ui5_cl_cgui_tree=>ty_t_key( ( 2 ) ) ).
 
@@ -1333,40 +1397,6 @@ CLASS ltcl_test IMPLEMENTATION.
 
   ENDMETHOD.
 
-  METHOD salv_events_to_handlers.
-
-    CLEAR: ltcl_salv_handler=>gv_row, ltcl_salv_handler=>gv_column, ltcl_salv_handler=>gv_function.
-    init( ).
-    mo_report->p_carrid = `LH`.
-    mo_report->mv_salv = abap_true.
-    event( z2ui5_cl_cgui_report=>cs_ucomm-execute ).
-
-    " both handlers found by their FOR EVENT, the rows clickable
-    cl_abap_unit_assert=>assert_equals( act = lines( mo_report->mo_salv->get_handlers( ) )
-                                        exp = 2 ).
-    cl_abap_unit_assert=>assert_true( xsdbool( mo_client->mv_view CS `EVENT:CGUI_ALV_LINE_SELECTION` ) ).
-
-    " the draft in between - the handlers are names, they survive it
-    serialize( `SALV` ).
-
-    " the click on the second row - DOUBLE_CLICK
-    event( name = z2ui5_cl_cgui_alv=>cs_event-line_selection
-           args = VALUE #( ( `/XX/MT_ROW/1` ) ) ).
-    cl_abap_unit_assert=>assert_equals( act = ltcl_salv_handler=>gv_row
-                                        exp = 2 ).
-
-    " the own function - ADDED_FUNCTION, on the grid (at_line_selection of
-    " the test report wrote a secondary list)
-    IF mo_cut->mo_cgui_alv IS NOT BOUND.
-      event( z2ui5_cl_cgui_report=>cs_ucomm-back ).
-    ENDIF.
-    cl_abap_unit_assert=>assert_bound( mo_cut->mo_cgui_alv ).
-    event( `ZBOOK` ).
-    cl_abap_unit_assert=>assert_equals( act = ltcl_salv_handler=>gv_function
-                                        exp = `ZBOOK` ).
-
-  ENDMETHOD.
-
   METHOD roundtrip.
 
     " the roundtrip of abap2UI5 between two requests: the app in its
@@ -1381,7 +1411,7 @@ CLASS ltcl_test IMPLEMENTATION.
         NEW z2ui5_cl_ui5_srv_model( attri = lo_parsed->mt_attri
                                     app   = lo_parsed->mo_app )->main_attri_db_load( ).
       CATCH cx_root INTO DATA(lx_error).
-        cl_abap_unit_assert=>fail( msg = |{ step }: the app cannot be saved - { lx_error->get_text( ) }| ).
+        cl_abap_unit_assert=>fail( |{ step }: the app cannot be saved - { lx_error->get_text( ) }| ).
     ENDTRY.
     result = CAST #( lo_parsed->mo_app ).
 
@@ -1393,7 +1423,9 @@ CLASS ltcl_test IMPLEMENTATION.
 
     " the rows of the ALV - an anonymous copy, its type rebuilt
     init( ).
-    mo_cut->set_variant_store( z2ui5_cl_cgui_variant_db=>factory( ) ).
+    " a store of the customer's - it travels in the draft with the report
+    mo_cut->set_variant_store( NEW ltcl_variant_store( ) ).
+
     mo_report->p_carrid = `LH`.
     mo_report->mv_alv = abap_true.
     event( z2ui5_cl_cgui_report=>cs_ucomm-execute ).

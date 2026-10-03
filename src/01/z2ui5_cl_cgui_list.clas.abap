@@ -27,8 +27,8 @@ CLASS z2ui5_cl_cgui_list DEFINITION PUBLIC FINAL CREATE PUBLIC.
         line_selection TYPE string VALUE `CGUI_LINE_SELECTION`,
       END OF cs_event.
 
-    "! the colors of FORMAT COLOR, as UI5 value states
     CONSTANTS:
+      "! the colors of FORMAT COLOR, as UI5 value states
       BEGIN OF cs_color,
         none     TYPE string VALUE ``,
         positive TYPE string VALUE `Success`,
@@ -47,10 +47,10 @@ CLASS z2ui5_cl_cgui_list DEFINITION PUBLIC FINAL CREATE PUBLIC.
     "! the page number in a header or footer
     CONSTANTS cv_page TYPE string VALUE `&PAGE&`.
 
-    "! the date formats of WRITE ... DD/MM/YYYY etc. - as the classic
-    "! additions: day and month in the order of the user's date format, the
-    "! year with 2 or 4 digits, DDMMYY / MMDDYY without separators
     CONSTANTS:
+      "! the date formats of WRITE ... DD/MM/YYYY etc. - as the classic
+      "! additions: day and month in the order of the user's date format, the
+      "! year with 2 or 4 digits, DDMMYY / MMDDYY without separators
       BEGIN OF cs_date_format,
         dd_mm_yy   TYPE string VALUE `DD/MM/YY`,
         mm_dd_yy   TYPE string VALUE `MM/DD/YY`,
@@ -61,8 +61,8 @@ CLASS z2ui5_cl_cgui_list DEFINITION PUBLIC FINAL CREATE PUBLIC.
         yymmdd     TYPE string VALUE `YYMMDD`,
       END OF cs_date_format.
 
-    "! FORMAT - what WRITE takes when it is not told otherwise
     TYPES:
+      "! FORMAT - what WRITE takes when it is not told otherwise
       BEGIN OF ty_s_format,
         color       TYPE string,
         intensified TYPE abap_bool,
@@ -97,8 +97,8 @@ CLASS z2ui5_cl_cgui_list DEFINITION PUBLIC FINAL CREATE PUBLIC.
       END OF ty_s_item.
     TYPES ty_t_item TYPE STANDARD TABLE OF ty_s_item WITH EMPTY KEY.
 
-    "! the value of an input field of the list - bound by the app
     TYPES:
+      "! the value of an input field of the list - bound by the app
       BEGIN OF ty_s_input,
         id    TYPE i,
         line  TYPE i,
@@ -106,6 +106,16 @@ CLASS z2ui5_cl_cgui_list DEFINITION PUBLIC FINAL CREATE PUBLIC.
         flag  TYPE abap_bool,
       END OF ty_s_input.
     TYPES ty_t_input TYPE STANDARD TABLE OF ty_s_input WITH EMPTY KEY.
+
+    TYPES:
+      "! the bindings of an input field - its value and its flag, as the app
+      "! binds its line of get_inputs( )
+      BEGIN OF ty_s_input_bind,
+        id    TYPE i,
+        value TYPE string,
+        flag  TYPE string,
+      END OF ty_s_input_bind.
+    TYPES ty_t_input_bind TYPE STANDARD TABLE OF ty_s_input_bind WITH EMPTY KEY.
 
     CLASS-METHODS factory
       RETURNING
@@ -257,6 +267,12 @@ CLASS z2ui5_cl_cgui_list DEFINITION PUBLIC FINAL CREATE PUBLIC.
       IMPORTING
         val TYPE ty_t_input.
 
+    "! the bindings of the input fields when the app binds its lines of
+    "! get_inputs( ) itself - render( ) takes them instead of binding inputs
+    METHODS set_input_binds
+      IMPORTING
+        val TYPE ty_t_input_bind.
+
     "! READ LINE line FIELD VALUE - the value of the index-th field of the
     "! line, `X` or empty for a checkbox
     METHODS read_value
@@ -386,6 +402,7 @@ CLASS z2ui5_cl_cgui_list DEFINITION PUBLIC FINAL CREATE PUBLIC.
     " PROTECTED, not PRIVATE: the list travels in the app's draft, and the
     " transpiled runtime reaches PROTECTED attributes but not PRIVATE ones
     DATA mt_item TYPE ty_t_item.
+    DATA mt_input_bind TYPE ty_t_input_bind.
     DATA mv_line TYPE i VALUE 1.
     DATA mv_header TYPE abap_bool.
     DATA mv_footer TYPE abap_bool.
@@ -468,6 +485,33 @@ CLASS z2ui5_cl_cgui_list DEFINITION PUBLIC FINAL CREATE PUBLIC.
 
     "! the thousands separator of the user's number format
     CLASS-METHODS grouping_char
+      RETURNING
+        VALUE(result) TYPE string.
+
+    "! the decimals of a currency as ISO 4217 has them - 2 for every
+    "! currency but the ones with 0 or 3
+    CLASS-METHODS currency_decimals
+      IMPORTING
+        currency      TYPE clike
+      RETURNING
+        VALUE(result) TYPE i.
+
+    "! USING EDIT MASK mask - every _ takes the next character of the value,
+    "! from the right after RR; ==ALPHA drops the leading zeros, the other
+    "! conversion exits leave the value as it is
+    CLASS-METHODS edit_mask_apply
+      IMPORTING
+        val           TYPE any
+        mask          TYPE clike
+      RETURNING
+        VALUE(result) TYPE string.
+
+    "! the date val in format (cs_date_format) - day, month and year in
+    "! that order, with the separator of the user's date format
+    CLASS-METHODS date_text
+      IMPORTING
+        val           TYPE d
+        format        TYPE clike
       RETURNING
         VALUE(result) TYPE string.
 
@@ -872,6 +916,12 @@ CLASS z2ui5_cl_cgui_list IMPLEMENTATION.
 
   ENDMETHOD.
 
+  METHOD set_input_binds.
+
+    mt_input_bind = val.
+
+  ENDMETHOD.
+
   METHOD set_inputs.
 
     LOOP AT val INTO DATA(ls_input).
@@ -932,8 +982,13 @@ CLASS z2ui5_cl_cgui_list IMPLEMENTATION.
 
   METHOD text_format.
 
-    DATA lv_number TYPE decfloat34.
-    DATA lv_text   TYPE c LENGTH 255.
+    DATA lv_number  TYPE decfloat34.
+    DATA lv_amount0 TYPE p LENGTH 16 DECIMALS 0.
+    DATA lv_amount2 TYPE p LENGTH 16 DECIMALS 2.
+    DATA lv_amount3 TYPE p LENGTH 16 DECIMALS 3.
+    DATA lv_date   TYPE d.
+    DATA lv_ts     TYPE timestamp.
+    DATA lv_tsl    TYPE timestampl.
 
     DATA(lo_descr) = cl_abap_typedescr=>describe_by_data( val ).
     DATA(lv_kind) = lo_descr->type_kind.
@@ -951,43 +1006,55 @@ CLASS z2ui5_cl_cgui_list IMPLEMENTATION.
     ENDIF.
 
     TRY.
+        " the options of WRITE ... TO as string templates - WRITE TO is not
+        " part of ABAP Cloud
         IF edit_mask IS NOT INITIAL.
-          " USING EDIT MASK - also ==ALPHA and the other conversion exits
-          WRITE val TO lv_text USING EDIT MASK edit_mask.
-          result = shift_left( val = |{ lv_text }| sub = ` ` ).
+          result = edit_mask_apply( val  = val
+                                    mask = edit_mask ).
         ELSEIF date_format IS NOT INITIAL AND lv_kind = cl_abap_typedescr=>typekind_date.
-          CASE to_upper( date_format ).
-            WHEN cs_date_format-dd_mm_yy.
-              WRITE val TO lv_text DD/MM/YY.
-            WHEN cs_date_format-mm_dd_yy.
-              WRITE val TO lv_text MM/DD/YY.
-            WHEN cs_date_format-dd_mm_yyyy.
-              WRITE val TO lv_text DD/MM/YYYY.
-            WHEN cs_date_format-mm_dd_yyyy.
-              WRITE val TO lv_text MM/DD/YYYY.
-            WHEN cs_date_format-ddmmyy.
-              WRITE val TO lv_text DDMMYY.
-            WHEN cs_date_format-mmddyy.
-              WRITE val TO lv_text MMDDYY.
-            WHEN cs_date_format-yymmdd.
-              WRITE val TO lv_text YYMMDD.
-            WHEN OTHERS.
-              WRITE val TO lv_text.
-          ENDCASE.
-          result = condense( lv_text ).
+          lv_date = val.
+          result = date_text( val    = lv_date
+                              format = date_format ).
         ELSEIF time_zone IS NOT INITIAL AND lv_kind = cl_abap_typedescr=>typekind_packed
             AND ( ( lo_descr->length = 8 AND CAST cl_abap_elemdescr( lo_descr )->decimals = 0 )
                OR ( lo_descr->length = 11 AND CAST cl_abap_elemdescr( lo_descr )->decimals = 7 ) ).
           " a time stamp in the time zone given
           DATA(lv_zone) = CONV tznzone( time_zone ).
-          WRITE val TO lv_text TIME ZONE lv_zone.
-          result = condense( lv_text ).
+          IF lo_descr->length = 8.
+            lv_ts = val.
+            result = |{ lv_ts TIMESTAMP = USER TIMEZONE = lv_zone }|.
+          ELSE.
+            lv_tsl = val.
+            result = |{ lv_tsl TIMESTAMP = USER TIMEZONE = lv_zone }|.
+          ENDIF.
         ELSEIF lv_numeric = abap_true AND currency IS NOT INITIAL.
-          WRITE val TO lv_text CURRENCY currency LEFT-JUSTIFIED.
-          result = condense( lv_text ).
+          " WRITE ... CURRENCY: the decimals of the currency, a packed amount
+          " shifted as the classic WRITE shifts it - its own decimals do not
+          " count. The decimals as ISO 4217 has them: TCURX is not released
+          " on ABAP Cloud, and the CURRENCY of a string template is not in
+          " the transpiled runtime
+          DATA(lv_cur_decimals) = currency_decimals( currency ).
+          DATA(lv_own_decimals) = COND i( WHEN lv_kind = cl_abap_typedescr=>typekind_packed
+                                          THEN CAST cl_abap_elemdescr( lo_descr )->decimals
+                                          ELSE 0 ).
+          lv_number = val.
+          lv_number = lv_number * ( CONV decfloat34( 10 ) ** ( lv_own_decimals - lv_cur_decimals ) ).
+          CASE lv_cur_decimals.
+            WHEN 0.
+              lv_amount0 = lv_number.
+              result = |{ lv_amount0 NUMBER = USER }|.
+            WHEN 3.
+              lv_amount3 = lv_number.
+              result = |{ lv_amount3 NUMBER = USER }|.
+            WHEN OTHERS.
+              lv_amount2 = lv_number.
+              result = |{ lv_amount2 NUMBER = USER }|.
+          ENDCASE.
         ELSEIF lv_numeric = abap_true AND unit IS NOT INITIAL.
-          WRITE val TO lv_text UNIT unit LEFT-JUSTIFIED.
-          result = condense( lv_text ).
+          " the decimals of a unit are in T006, which ABAP Cloud does not
+          " release - the number as it is
+          lv_number = val.
+          result = |{ lv_number NUMBER = USER }|.
         ELSEIF lv_numeric = abap_true AND ( decimals >= 0 OR round <> 0 ).
           " ROUND r: the value times 10 ** -r
           lv_number = val.
@@ -998,7 +1065,14 @@ CLASS z2ui5_cl_cgui_list IMPLEMENTATION.
                                       WHEN lv_kind = cl_abap_typedescr=>typekind_packed
                                       THEN CAST cl_abap_elemdescr( lo_descr )->decimals
                                       ELSE 0 ).
+          " a whole number rounded first - the same on a system, and the
+          " transpiled runtime does not round for DECIMALS = 0
+          IF lv_decimals = 0.
+            lv_number = round( val = lv_number
+                               dec = 0 ).
+          ENDIF.
           result = |{ lv_number NUMBER = USER DECIMALS = lv_decimals }|.
+
         ELSEIF lv_numeric = abap_true AND no_grouping = abap_true.
           lv_number = val.
           result = |{ lv_number NUMBER = USER }|.
@@ -1023,6 +1097,127 @@ CLASS z2ui5_cl_cgui_list IMPLEMENTATION.
     IF no_sign = abap_true AND lv_numeric = abap_true.
       result = replace( val = result sub = `-` with = `` occ = 0 ).
     ENDIF.
+
+  ENDMETHOD.
+
+  METHOD currency_decimals.
+
+    DATA(lv_currency) = to_upper( condense( currency ) ).
+    CASE lv_currency.
+      WHEN `BIF` OR `CLP` OR `DJF` OR `GNF` OR `ISK` OR `JPY` OR `KMF` OR `KRW` OR `PYG`
+          OR `RWF` OR `UGX` OR `UYI` OR `VND` OR `VUV` OR `XAF` OR `XOF` OR `XPF`.
+        result = 0.
+      WHEN `BHD` OR `IQD` OR `JOD` OR `KWD` OR `LYD` OR `OMR` OR `TND`.
+        result = 3.
+      WHEN OTHERS.
+        result = 2.
+    ENDCASE.
+
+  ENDMETHOD.
+
+  METHOD edit_mask_apply.
+
+    DATA lt_char TYPE string_table.
+    DATA lv_pos  TYPE i.
+
+    DATA(lv_value) = |{ val }|.
+    DATA(lv_mask) = |{ mask }|.
+
+    IF strlen( lv_mask ) > 2 AND substring( val = lv_mask len = 2 ) = `==`.
+      IF to_upper( substring( val = lv_mask off = 2 ) ) = `ALPHA`.
+        result = |{ lv_value ALPHA = OUT }|.
+      ELSE.
+        result = lv_value.
+      ENDIF.
+      RETURN.
+    ENDIF.
+
+    DATA(lv_right) = abap_false.
+    IF strlen( lv_mask ) >= 2.
+      DATA(lv_prefix) = to_upper( substring( val = lv_mask len = 2 ) ).
+      IF lv_prefix = `LL` OR lv_prefix = `RR`.
+        lv_right = xsdbool( lv_prefix = `RR` ).
+        lv_mask = substring( val = lv_mask off = 2 ).
+      ENDIF.
+    ENDIF.
+
+    DATA(lv_mask_len) = strlen( lv_mask ).
+    DATA(lv_value_len) = strlen( lv_value ).
+    IF lv_right = abap_false.
+      lv_pos = 0.
+      DO lv_mask_len TIMES.
+        DATA(lv_index) = sy-index - 1.
+        DATA(lv_char) = substring( val = lv_mask off = lv_index len = 1 ).
+        IF lv_char = `_`.
+          IF lv_pos < lv_value_len.
+            lv_char = substring( val = lv_value off = lv_pos len = 1 ).
+          ELSE.
+            lv_char = ` `.
+          ENDIF.
+          lv_pos = lv_pos + 1.
+        ENDIF.
+        INSERT lv_char INTO TABLE lt_char.
+      ENDDO.
+    ELSE.
+      lv_pos = lv_value_len.
+      DO lv_mask_len TIMES.
+        lv_index = lv_mask_len - sy-index.
+        lv_char = substring( val = lv_mask off = lv_index len = 1 ).
+        IF lv_char = `_`.
+          lv_pos = lv_pos - 1.
+          IF lv_pos >= 0.
+            lv_char = substring( val = lv_value off = lv_pos len = 1 ).
+          ELSE.
+            lv_char = ` `.
+          ENDIF.
+        ENDIF.
+        INSERT lv_char INTO lt_char INDEX 1.
+      ENDDO.
+    ENDIF.
+    result = shift_right( val = shift_left( val = concat_lines_of( lt_char ) sub = ` ` ) sub = ` ` ).
+
+  ENDMETHOD.
+
+  METHOD date_text.
+
+    DATA lv_sep TYPE string VALUE `.`.
+
+    " the separator of the user's date format: the first character of the
+    " formatted date that is no digit
+    DATA(lv_user) = |{ val DATE = USER }|.
+    DATA(lv_len) = strlen( lv_user ).
+    DO lv_len TIMES.
+      DATA(lv_index) = sy-index - 1.
+      DATA(lv_char) = substring( val = lv_user off = lv_index len = 1 ).
+      IF lv_char CN `0123456789`.
+        lv_sep = lv_char.
+        EXIT.
+      ENDIF.
+    ENDDO.
+
+    DATA(lv_year) = |{ val+0(4) }|.
+    DATA(lv_yy) = |{ val+2(2) }|.
+    DATA(lv_month) = |{ val+4(2) }|.
+    DATA(lv_day) = |{ val+6(2) }|.
+    DATA(lv_format) = to_upper( format ).
+    CASE lv_format.
+      WHEN cs_date_format-dd_mm_yy.
+        result = |{ lv_day }{ lv_sep }{ lv_month }{ lv_sep }{ lv_yy }|.
+      WHEN cs_date_format-mm_dd_yy.
+        result = |{ lv_month }{ lv_sep }{ lv_day }{ lv_sep }{ lv_yy }|.
+      WHEN cs_date_format-dd_mm_yyyy.
+        result = |{ lv_day }{ lv_sep }{ lv_month }{ lv_sep }{ lv_year }|.
+      WHEN cs_date_format-mm_dd_yyyy.
+        result = |{ lv_month }{ lv_sep }{ lv_day }{ lv_sep }{ lv_year }|.
+      WHEN cs_date_format-ddmmyy.
+        result = |{ lv_day }{ lv_month }{ lv_yy }|.
+      WHEN cs_date_format-mmddyy.
+        result = |{ lv_month }{ lv_day }{ lv_yy }|.
+      WHEN cs_date_format-yymmdd.
+        result = |{ lv_yy }{ lv_month }{ lv_day }|.
+      WHEN OTHERS.
+        result = lv_user.
+    ENDCASE.
 
   ENDMETHOD.
 
@@ -1125,10 +1320,14 @@ CLASS z2ui5_cl_cgui_list IMPLEMENTATION.
           IF lr_item->kind = cs_kind-checkbox.
             lv_text = lv_text && COND string( WHEN lr_item->flag = abap_true THEN `[X]` ELSE `[ ]` ).
           ELSEIF lr_item->len > 0 AND lr_item->justify = cs_justify-right.
-            lv_text = lv_text && substring( val = |{ lr_item->text WIDTH = lr_item->len ALIGN = RIGHT }|
+            lv_text = lv_text && substring( val = z2ui5_cl_cgui_context=>text_align( val   = lr_item->text
+                                                                                     width = lr_item->len
+                                                                                     align = `RIGHT` )
                                             len = lr_item->len ).
           ELSEIF lr_item->len > 0 AND lr_item->justify = cs_justify-center.
-            lv_text = lv_text && substring( val = |{ lr_item->text WIDTH = lr_item->len ALIGN = CENTER }|
+            lv_text = lv_text && substring( val = z2ui5_cl_cgui_context=>text_align( val   = lr_item->text
+                                                                                     width = lr_item->len
+                                                                                     align = `CENTER` )
                                             len = lr_item->len ).
           ELSEIF lr_item->len > 0.
             lv_text = lv_text && substring( val = |{ lr_item->text WIDTH = lr_item->len }|
@@ -1237,24 +1436,33 @@ CLASS z2ui5_cl_cgui_list IMPLEMENTATION.
     " NO-GAP: no space to the next item
     DATA(lv_class) = COND string( WHEN item-no_gap = abap_true THEN `` ELSE `sapUiTinyMarginEnd` ).
 
-    " an input field is bound to its line of inputs
+    " an input field is bound to its line of inputs - by the app
+    " (set_input_binds( )), or here
     IF item-input = abap_true.
+      READ TABLE mt_input_bind INTO DATA(ls_bind) WITH KEY id = item-id.
+      DATA(lv_bound) = xsdbool( sy-subrc = 0 ).
       READ TABLE inputs TRANSPORTING NO FIELDS WITH KEY id = item-id.
-      IF sy-subrc = 0.
-        DATA(lv_index) = sy-tabix.
-        ASSIGN inputs[ lv_index ] TO <input>.
+      DATA(lv_index) = COND i( WHEN sy-subrc = 0 THEN sy-tabix ).
+      IF lv_bound = abap_true OR lv_index > 0.
+        IF lv_index > 0.
+          ASSIGN inputs[ lv_index ] TO <input>.
+        ENDIF.
         IF item-kind = cs_kind-checkbox.
+          DATA(lv_flag_bind) = COND string( WHEN lv_bound = abap_true THEN ls_bind-flag
+                                            ELSE client->_bind( val       = <input>-flag
+                                                                tab       = inputs
+                                                                tab_index = lv_index ) ).
           node->tag( `CheckBox`
-              )->a( n = `selected` v = client->_bind( val       = <input>-flag
-                                                     tab       = inputs
-                                                     tab_index = lv_index ) ).
+              )->a( n = `selected` v = lv_flag_bind ).
         ELSE.
+          DATA(lv_value_bind) = COND string( WHEN lv_bound = abap_true THEN ls_bind-value
+                                             ELSE client->_bind( val       = <input>-value
+                                                                 tab       = inputs
+                                                                 tab_index = lv_index ) ).
           node->tag( `Input`
-              )->a( n = `value` v = client->_bind( val       = <input>-value
-                                                  tab       = inputs
-                                                  tab_index = lv_index )
+              )->a( n = `value` v = lv_value_bind
               )->a( n = `width` v = |{ COND i( WHEN item-len > 0 THEN item-len ELSE nmax( val1 = strlen( item-text ) val2 = 10 ) ) + 2 }ch|
-              )->a( n = `class` v = lv_class ).
+              )->a( n = `class` t = lv_class ).
         ENDIF.
         RETURN.
       ENDIF.
@@ -1276,14 +1484,14 @@ CLASS z2ui5_cl_cgui_list IMPLEMENTATION.
               )->a( n = `text`     t = item-text
               )->a( n = `state`    t = COND #( WHEN item-color IS NOT INITIAL THEN item-color ELSE `Information` )
               )->a( n = `inverted` b = item-inverse
-              )->a( n = `class`    v = lv_class ).
+              )->a( n = `class`    t = lv_class ).
           RETURN.
         ENDIF.
         IF item-hotspot = abap_false AND item-intensified = abap_true AND item-color IS INITIAL.
           node->tag( `Label`
               )->a( n = `text`   t = item-text
               )->a( n = `design` v = `Bold`
-              )->a( n = `class`  v = lv_class ).
+              )->a( n = `class`  t = lv_class ).
           IF item-len > 0.
             node->a( n = `width` v = |{ item-len }ch| ).
           ENDIF.
@@ -1292,7 +1500,7 @@ CLASS z2ui5_cl_cgui_list IMPLEMENTATION.
         IF item-hotspot = abap_true.
           node->tag( `Link`
               )->a( n = `text`  t = item-text
-              )->a( n = `class` v = lv_class
+              )->a( n = `class` t = lv_class
               )->a( n = `press` v = client->_event( val   = cs_event-line_selection
                                                     t_arg = VALUE #( ( |{ item-line }| )
                                                                      ( item-hide )
@@ -1302,21 +1510,19 @@ CLASS z2ui5_cl_cgui_list IMPLEMENTATION.
           node->tag( `ObjectStatus`
               )->a( n = `text`  t = item-text
               )->a( n = `state` t = item-color
-              )->a( n = `class` v = lv_class ).
+              )->a( n = `class` t = lv_class ).
         ELSE.
           node->tag( `Text`
               )->a( n = `text`             t = item-text
               )->a( n = `renderWhitespace` b = abap_true
               )->a( n = `wrapping`         b = abap_false
-              )->a( n = `class`            v = lv_class ).
+              )->a( n = `class`            t = lv_class ).
           IF item-len > 0.
-            node->a( n = `width` v = |{ item-len }ch| ).
-            CASE item-justify.
-              WHEN cs_justify-right.
-                node->a( n = `textAlign` v = `End` ).
-              WHEN cs_justify-center.
-                node->a( n = `textAlign` v = `Center` ).
-            ENDCASE.
+            node->a( n = `width`     v = |{ item-len }ch|
+               )->a( n = `textAlign` v = SWITCH #( item-justify
+                                                   WHEN cs_justify-right THEN `End`
+                                                   WHEN cs_justify-center THEN `Center`
+                                                   ELSE `Begin` ) ).
           ENDIF.
         ENDIF.
 
@@ -1332,7 +1538,7 @@ CLASS z2ui5_cl_cgui_list IMPLEMENTATION.
         node->tag( n = `Icon` ns = `core`
             )->a( n = `xmlns:core` v = `sap.ui.core`
             )->a( n = `src`        v = item-text
-            )->a( n = `class`      v = lv_class ).
+            )->a( n = `class`      t = lv_class ).
         IF item-quickinfo IS NOT INITIAL.
           node->a( n = `tooltip` t = item-quickinfo ).
         ENDIF.

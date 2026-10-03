@@ -46,8 +46,8 @@ CLASS z2ui5_cl_cgui_tree DEFINITION PUBLIC FINAL CREATE PUBLIC.
       END OF ty_s_column.
     TYPES ty_t_column TYPE STANDARD TABLE OF ty_s_column WITH EMPTY KEY.
 
-    "! a row the browser shows - the nodes of the expanded branches
     TYPES:
+      "! a row the browser shows - the nodes of the expanded branches
       BEGIN OF ty_s_view,
         key      TYPE i,
         level    TYPE i,
@@ -264,11 +264,14 @@ CLASS z2ui5_cl_cgui_tree DEFINITION PUBLIC FINAL CREATE PUBLIC.
 
     "! the tree into node - view is the result of view( ), an attribute of
     "! the app so the table can bind it
+    "! view - the rows of view( ), an attribute of the app (bound by
+    "! reference); rows_bind - its binding, when the app binds it itself
     METHODS render
       IMPORTING
-        node   TYPE REF TO z2ui5_cl_ui5_view_builder
-        client TYPE REF TO z2ui5_if_client
-        view   TYPE ty_t_view.
+        node      TYPE REF TO z2ui5_cl_ui5_view_builder
+        client    TYPE REF TO z2ui5_if_client
+        view      TYPE ty_t_view
+        rows_bind TYPE string OPTIONAL.
 
     "! expand / collapse - abap_true when the event was one of the tree;
     "! cs_event-node is left to the report
@@ -292,6 +295,9 @@ CLASS z2ui5_cl_cgui_tree DEFINITION PUBLIC FINAL CREATE PUBLIC.
 
   PROTECTED SECTION.
   PRIVATE SECTION.
+
+    " the number of a cell column, C01 ... C99
+    TYPES ty_cell_no TYPE n LENGTH 2.
 
     DATA mt_node   TYPE ty_t_node.
     DATA mt_column TYPE ty_t_column.
@@ -705,6 +711,7 @@ CLASS z2ui5_cl_cgui_tree IMPLEMENTATION.
 
   METHOD view_add.
 
+    DATA lv_cell_no TYPE ty_cell_no.
     FIELD-SYMBOLS <cell> TYPE string.
 
     LOOP AT mt_node INTO DATA(ls_node) WHERE parent = parent.
@@ -727,7 +734,10 @@ CLASS z2ui5_cl_cgui_tree IMPLEMENTATION.
                              WHEN lv_expandable = abap_true OR ls_node-folder = abap_true THEN `sap-icon://folder-blank`
                              ELSE `` ) ).
       LOOP AT ls_node-cells INTO DATA(lv_cell).
-        ASSIGN COMPONENT |C{ sy-tabix WIDTH = 2 ALIGN = RIGHT PAD = '0' }| OF STRUCTURE ls_row TO <cell>.
+        " C01, C02, ... - NUMC rather than ALIGN and PAD, which the
+        " transpiled runtime does not apply
+        lv_cell_no = sy-tabix.
+        ASSIGN COMPONENT |C{ lv_cell_no }| OF STRUCTURE ls_row TO <cell>.
         IF sy-subrc = 0.
           <cell> = lv_cell.
         ENDIF.
@@ -755,7 +765,8 @@ CLASS z2ui5_cl_cgui_tree IMPLEMENTATION.
     DATA(lo_table) = node->ele( n = `Table` ns = `table`
         )->a( n = `xmlns:table`        v = `sap.ui.table`
         )->a( n = `xmlns:core`         v = `sap.ui.core`
-        )->a( n = `rows`               v = client->_bind( view )
+        )->a( n = `rows`               v = COND #( WHEN rows_bind IS NOT INITIAL THEN rows_bind
+                                                   ELSE client->_bind( view ) )
         )->a( n = `selectionMode`      v = `None`
         )->a( n = `visibleRowCount`    v = |{ lv_rows }|
         )->a( n = `class`              v = `sapUiSmallMargin` ).
@@ -831,7 +842,7 @@ CLASS z2ui5_cl_cgui_tree IMPLEMENTATION.
           )->a( n = `text` t = ls_column-text ).
       lo_column->ele( n = `template` ns = `table`
           )->tag( `Text`
-          )->a( n = `text`     v = |\{C{ lv_index WIDTH = 2 ALIGN = RIGHT PAD = '0' }\}|
+          )->a( n = `text`     v = |\{C{ CONV ty_cell_no( lv_index ) }\}|
           )->a( n = `wrapping` b = abap_false ).
     ENDLOOP.
 

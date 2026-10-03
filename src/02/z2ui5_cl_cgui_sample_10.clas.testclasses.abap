@@ -203,7 +203,11 @@ CLASS ltcl_test IMPLEMENTATION.
     " F4 on the upper limit: the own hit list, LH (the third) picked
     event( name = z2ui5_cl_cgui_selscreen=>cs_event-value_request
            args = VALUE #( ( `S_CARRID` ) ( `HIGH` ) ) ).
-    cl_abap_unit_assert=>assert_true( xsdbool( mo_client->mo_called IS INSTANCE OF z2ui5_cl_cgui_select ) ).
+    TRY.
+        cl_abap_unit_assert=>assert_bound( CAST z2ui5_cl_cgui_select( mo_client->mo_called ) ).
+      CATCH cx_sy_move_cast_error.
+        cl_abap_unit_assert=>fail( `not a z2ui5_cl_cgui_select` ).
+    ENDTRY.
     pick( 3 ).
     cl_abap_unit_assert=>assert_equals( act = lines( mo_app->s_carrid )
                                         exp = 1 ).
@@ -273,7 +277,11 @@ CLASS ltcl_test IMPLEMENTATION.
                                          exp = `*showValueHelp="true"*EVENT:CGUI_ALV_F4*` ).
     event( name = z2ui5_cl_cgui_alv=>cs_event-f4
            args = VALUE #( ( `/XX/MT_PLAN/0` ) ( `CARRID` ) ) ).
-    cl_abap_unit_assert=>assert_true( xsdbool( mo_client->mo_called IS INSTANCE OF z2ui5_cl_cgui_select ) ).
+    TRY.
+        cl_abap_unit_assert=>assert_bound( CAST z2ui5_cl_cgui_select( mo_client->mo_called ) ).
+      CATCH cx_sy_move_cast_error.
+        cl_abap_unit_assert=>fail( `not a z2ui5_cl_cgui_select` ).
+    ENDTRY.
     pick( 5 ).
     cl_abap_unit_assert=>assert_equals( act = mo_app->mt_plan[ 1 ]-carrid
                                         exp = `UA` ).

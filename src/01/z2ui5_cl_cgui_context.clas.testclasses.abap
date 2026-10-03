@@ -246,7 +246,7 @@ CLASS ltcl_test IMPLEMENTATION.
 
   METHOD value_check_fixed_values.
 
-    DATA lv_flag  TYPE xfeld.
+    DATA lv_flag  TYPE xsdboolean.
     DATA lv_plain TYPE c LENGTH 1.
 
     lv_flag = `Q`.
@@ -263,18 +263,18 @@ CLASS ltcl_test IMPLEMENTATION.
 
   METHOD dtel_name_and_docu.
 
-    DATA lv_carrid TYPE s_carr_id.
-    DATA lt_range  TYPE RANGE OF s_carr_id.
+    DATA lv_carrid TYPE land1.
+    DATA lt_range  TYPE RANGE OF land1.
     DATA lv_local  TYPE c LENGTH 3.
 
     cl_abap_unit_assert=>assert_equals( act = z2ui5_cl_cgui_context=>rtti_get_dtel_name( lv_carrid )
-                                        exp = `S_CARR_ID` ).
+                                        exp = `LAND1` ).
     cl_abap_unit_assert=>assert_equals( act = z2ui5_cl_cgui_context=>rtti_get_dtel_name( lt_range )
-                                        exp = `S_CARR_ID` ).
+                                        exp = `LAND1` ).
     cl_abap_unit_assert=>assert_initial( z2ui5_cl_cgui_context=>rtti_get_dtel_name( lv_local ) ).
     " a data element with documentation has paragraphs, one without none
-    IF z2ui5_cl_cgui_context=>dtel_docu_check( `S_CARR_ID` ) = abap_true.
-      cl_abap_unit_assert=>assert_not_initial( z2ui5_cl_cgui_context=>dtel_docu_read( `S_CARR_ID` ) ).
+    IF z2ui5_cl_cgui_context=>dtel_docu_check( `LAND1` ) = abap_true.
+      cl_abap_unit_assert=>assert_not_initial( z2ui5_cl_cgui_context=>dtel_docu_read( `LAND1` ) ).
     ENDIF.
     cl_abap_unit_assert=>assert_false( z2ui5_cl_cgui_context=>dtel_docu_check( `ZZ_NO_SUCH_DTEL_42` ) ).
 

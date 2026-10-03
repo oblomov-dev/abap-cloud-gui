@@ -1,15 +1,14 @@
-"! Converted with z2ui5_cl_cgui_converter from the classic SAP demo report
-"! DEMO_SEL_SCREEN_WITH_TABSTRIP - taken over as the converter wrote it,
-"! only the class name changed: a selection screen with a tabbed block whose
-"! tabs show the subscreens 100 and 200.
+"! The classic SAP demo report DEMO_SEL_SCREEN_WITH_TABSTRIP as a report
+"! class: a selection screen with a tabbed block whose tabs show the
+"! subscreens 100 and 200.
 CLASS z2ui5_cl_cgui_sample_09 DEFINITION PUBLIC
   INHERITING FROM z2ui5_cl_cgui_report
   FINAL
   CREATE PUBLIC.
 
   PUBLIC SECTION.
-    DATA flag TYPE c LENGTH 1.
-    DATA button1 TYPE c LENGTH 20.
+    DATA button1
+ TYPE c LENGTH 20.
     DATA button2 TYPE c LENGTH 20.
     DATA button3 TYPE c LENGTH 20.
 

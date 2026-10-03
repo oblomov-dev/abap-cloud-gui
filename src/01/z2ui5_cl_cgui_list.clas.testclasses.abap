@@ -111,7 +111,7 @@ CLASS ltcl_test IMPLEMENTATION.
     lo_list->write( `one` )->new_page( `Page 2` )->write( `two` ).
     cl_abap_unit_assert=>assert_true( lo_list->has_content( ) ).
 
-    DATA(lv_view) = lo_list->stringify( client = NEW ltcl_client( ) ).
+    DATA(lv_view) = lo_list->stringify( NEW ltcl_client( ) ).
     " the header above the list and again after the page break
     cl_abap_unit_assert=>assert_char_cp( act = lv_view
                                          exp = `*HEAD*one*Page 2*HEAD*two*` ).
@@ -334,7 +334,7 @@ CLASS ltcl_test IMPLEMENTATION.
 
     DATA(lt_text) = lo_list->to_text( ).
     DATA lv_heads TYPE i.
-    LOOP AT lt_text INTO DATA(lv_text) WHERE table_line = `HEAD`.
+    LOOP AT lt_text TRANSPORTING NO FIELDS WHERE table_line = `HEAD`.
       lv_heads = lv_heads + 1.
     ENDLOOP.
     " page 1 and 2 with the header, page 3 NO-HEADING

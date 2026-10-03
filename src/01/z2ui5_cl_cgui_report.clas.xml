@@ -135,18 +135,6 @@
     </item>
     <item>
      <ID>I</ID>
-     <KEY>021</KEY>
-     <ENTRY>The background job could not be scheduled</ENTRY>
-     <LENGTH>51</LENGTH>
-    </item>
-    <item>
-     <ID>I</ID>
-     <KEY>022</KEY>
-     <ENTRY>Background job &amp;1 (&amp;2) scheduled - output in the spool (SM37)</ENTRY>
-     <LENGTH>71</LENGTH>
-    </item>
-    <item>
-     <ID>I</ID>
      <KEY>023</KEY>
      <ENTRY>Fill in the required field &amp;1</ENTRY>
      <LENGTH>39</LENGTH>
@@ -174,12 +162,6 @@
      <KEY>027</KEY>
      <ENTRY>Copy Link</ENTRY>
      <LENGTH>20</LENGTH>
-    </item>
-    <item>
-     <ID>I</ID>
-     <KEY>028</KEY>
-     <ENTRY>Execute in Background</ENTRY>
-     <LENGTH>31</LENGTH>
     </item>
     <item>
      <ID>I</ID>
@@ -222,12 +204,6 @@
      <KEY>035</KEY>
      <ENTRY>Enter an allowed value for &amp;1</ENTRY>
      <LENGTH>60</LENGTH>
-    </item>
-    <item>
-     <ID>I</ID>
-     <KEY>036</KEY>
-     <ENTRY>Spool request &amp;1 created</ENTRY>
-     <LENGTH>50</LENGTH>
     </item>
     <item>
      <ID>I</ID>

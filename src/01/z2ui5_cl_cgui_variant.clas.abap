@@ -14,9 +14,9 @@ CLASS z2ui5_cl_cgui_variant DEFINITION PUBLIC FINAL CREATE PUBLIC.
         select_option TYPE string VALUE `S`,
       END OF cs_kind.
 
-    "! the dynamic dates of a variant - TODAY also with an offset in days,
-    "! TODAY-1 or TODAY+7
     CONSTANTS:
+      "! the dynamic dates of a variant - TODAY also with an offset in days,
+      "! TODAY-1 or TODAY+7
       BEGIN OF cs_dynamic,
         today            TYPE string VALUE `TODAY`,
         month_start      TYPE string VALUE `MONTH_START`,
@@ -41,10 +41,10 @@ CLASS z2ui5_cl_cgui_variant DEFINITION PUBLIC FINAL CREATE PUBLIC.
       RETURNING
         VALUE(result) TYPE z2ui5_cl_cgui_selscreen=>ty_t_value.
 
-    "! one value of a variant: a parameter has one line with its value in
-    "! low, a select-option one line per range line - and one line without
-    "! sign when it is empty, so that loading the variant clears it
     TYPES:
+      "! one value of a variant: a parameter has one line with its value in
+      "! low, a select-option one line per range line - and one line without
+      "! sign when it is empty, so that loading the variant clears it
       BEGIN OF ty_s_value,
         name   TYPE string,
         kind   TYPE string,
@@ -315,7 +315,7 @@ CLASS z2ui5_cl_cgui_variant IMPLEMENTATION.
 
     DATA(lv_today) = today.
     IF lv_today IS INITIAL.
-      lv_today = cl_abap_context_info=>get_system_date( ).
+      lv_today = sy-datum.
     ENDIF.
     DATA(lv_dynamic) = to_upper( condense( dynamic ) ).
 

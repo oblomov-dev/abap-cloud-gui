@@ -33,10 +33,10 @@ CLASS z2ui5_cl_cgui_popup DEFINITION PUBLIC FINAL CREATE PRIVATE.
         ok     TYPE string VALUE `1`,
       END OF cs_answer.
 
-    "! a field of get_values( ): value is the text of an input, a date as
-    "! yyyyMMdd, the key of a listbox; flag the value of a checkbox; keys the
-    "! keys picked in a multi listbox (cs_kind-multi)
     TYPES:
+      "! a field of get_values( ): value is the text of an input, a date as
+      "! yyyyMMdd, the key of a listbox; flag the value of a checkbox; keys the
+      "! keys picked in a multi listbox (cs_kind-multi)
       BEGIN OF ty_s_field,
         name      TYPE string,
         text      TYPE string,
@@ -49,8 +49,8 @@ CLASS z2ui5_cl_cgui_popup DEFINITION PUBLIC FINAL CREATE PRIVATE.
       END OF ty_s_field.
     TYPES ty_t_field TYPE STANDARD TABLE OF ty_s_field WITH EMPTY KEY.
 
-    "! the values of the listbox of field name
     TYPES:
+      "! the values of the listbox of field name
       BEGIN OF ty_s_listbox,
         name TYPE string,
         key  TYPE string,
