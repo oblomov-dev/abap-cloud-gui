@@ -44,10 +44,10 @@ CLASS z2ui5_cl_cgui_r2c_03 DEFINITION PUBLIC
 
     METHODS total
       IMPORTING
-        iv_discount TYPE p
+        iv_discount LIKE p_disc
       CHANGING
         it_items TYPE ty_t_gs_template
-        cv_net   TYPE p.
+        cv_net   LIKE gv_net.
 
     METHODS output.
 
@@ -91,6 +91,12 @@ CLASS z2ui5_cl_cgui_r2c_03 IMPLEMENTATION.
 
   METHOD start_of_selection.
 
+    " every run starts with the global data of a fresh start - the classic report restarted after its list
+    CLEAR: gt_items,
+           gs_template,
+           gv_net,
+           gv_gross.
+
     build_items( EXPORTING
                    iv_count = p_items
                  CHANGING
@@ -133,8 +139,11 @@ CLASS z2ui5_cl_cgui_r2c_03 IMPLEMENTATION.
     lr_pos = VALUE #( ( sign = 'I' option = 'BT' low = 1 high = 1000 ) ).
     lr_big = VALUE #( ( sign = 'I' option = 'GE' low = 10 ) ).
     cv_net = 0.
-    LOOP AT it_items INTO ls_item WHERE pos IN lr_pos.
-      IF ls_item-quantity IN lr_big.
+    LOOP AT it_items INTO ls_item.
+      IF z2ui5_cl_cgui_context=>range_check( val = ls_item-pos range = lr_pos ) = abap_false.
+        CONTINUE.
+      ENDIF.
+      IF z2ui5_cl_cgui_context=>range_check( val = ls_item-quantity range = lr_big ) = abap_true.
         cv_net = cv_net + ls_item-quantity * ls_item-price * ( 1 - iv_discount ).
       ELSE.
         cv_net = cv_net + ls_item-quantity * ls_item-price.

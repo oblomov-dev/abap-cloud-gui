@@ -5,7 +5,7 @@
 | Source | `zr2c_07_messages.prog.abap` |
 | Text pool | none - texts are placeholders, see the TODOs |
 | Result | **converted** - `z2ui5_cl_cgui_r2c_07.clas.abap`, `z2ui5_cl_cgui_r2c_07.clas.xml` |
-| Mapped | 14 construct(s) |
+| Mapped | 16 construct(s) |
 | TODO | 2 |
 | Release state to check | 1 object(s) |
 
@@ -34,6 +34,7 @@ Layout, formatting and behaviour of the classic report that the list, the ALV or
 | Line | Classic | abap-cloud-gui |
 |---|---|---|
 | 7 | `REPORT zr2c_07_messages MESSAGE-ID zr2c` | the class, `INHERITING FROM z2ui5_cl_cgui_report` |
+| 9 | `global data - the report restarted after its list` | `CLEAR` of 1 global data object(s) at the start of `start_of_selection( )` |
 | 11 | `PARAMETERS p_type TYPE c LENGTH 1 DEFAULT 'S' OBLIGATORY` | attribute `p_type`, `screen->parameter( )` |
 | 12 | `PARAMETERS p_num TYPE i DEFAULT 42` | attribute `p_num`, `screen->parameter( )` |
 | 14 | `AT SELECTION-SCREEN` | `at_selection_screen( )` |
@@ -44,6 +45,7 @@ Layout, formatting and behaviour of the classic report that the list, the ALV or
 | 27 | `MESSAGE TEXT-001 TYPE 'I'` | `message( )` |
 | 29 | `MESSAGE w012(zr2c) WITH p_num` | `MESSAGE ... INTO` + `message( )` |
 | 32 | `MESSAGE gv_text TYPE 'S' DISPLAY LIKE 'E'` | `message( )` |
+| 34 | `MESSAGE s013 WITH p_num INTO gv_text` | `MESSAGE ... INTO` with the message class of MESSAGE-ID |
 | 35 | `WRITE / 'Last message:'(002)` | `write( )` |
 | 35 | `WRITE gv_text` | `write( )` |
 | 36 | `MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno WITH sy-msgv1 sy-...` | `MESSAGE ... INTO` + `message( )` |

@@ -106,6 +106,7 @@ Inherit from `z2ui5_cl_cgui_report`, declare the selection screen fields as
 | `at_selection_screen_on( field )` | after Execute, once per field shown — `message( type = 'E' )` marks the field and stops |
 | `at_selection_screen` | after Execute — `message( type = 'E' )` keeps the user on the selection screen |
 | `start_of_selection` | read the data, output it with `write( )` or `alv( )` |
+| `top_of_page` | when the list of a run gets its first line, before it — the page header |
 | `at_line_selection( row hide )` | a hotspot of the list or a row of the ALV was clicked |
 | `at_user_command( ucomm )` | a button of the selection screen, a checkbox or radio button group with `user_command`, or a confirmed `popup_to_confirm( )` |
 | `at_value_request( field )` | F4 on a field — the default is the standard F4 of its DDIC type; redefine it for your own and call `super->` for the rest |

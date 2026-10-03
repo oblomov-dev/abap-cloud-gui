@@ -101,7 +101,7 @@ CLASS z2ui5_cl_cgui_r2c_02 DEFINITION PUBLIC
   PUBLIC SECTION.
     " global data of the report
     DATA:
-      gt_flight TYPE STANDARD TABLE OF ty_flight,
+      gt_flight TYPE STANDARD TABLE OF ty_flight WITH DEFAULT KEY,
       gs_flight TYPE ty_flight.
 
     " selection screen
@@ -133,6 +133,10 @@ CLASS z2ui5_cl_cgui_r2c_02 DEFINITION PUBLIC
   ENDMETHOD.
 
   METHOD start_of_selection.
+
+    " every run starts with the global data of a fresh start - the classic report restarted after its list
+    CLEAR: gt_flight,
+           gs_flight.
 
     SELECT carrid, connid, fldate
       FROM sflight
@@ -190,7 +194,8 @@ class `ZR2C` must exist in the target system.
 | text symbols `TEXT-001`, `'text'(001)` | the text of the text pool as a literal; a TODO when it is unknown |
 | selection texts | `text =` of the field; none for a text taken from the DDIC (the screen shows the DDIC label as well) |
 | `TABLES dbtab` | dropped when it only typed select-options and parameters; otherwise `DATA dbtab TYPE dbtab` and a TODO. `TABLES sscrfields` is dropped |
-| global `DATA`, `TYPES`, `CONSTANTS` (also those inside event blocks, which are global in a report) | PUBLIC attributes, types and constants - PUBLIC because `alv( )` binds a PUBLIC table directly, and the draft persists no PRIVATE attributes (AGENTS.md) |
+| global `DATA`, `TYPES`, `CONSTANTS` (also those inside event blocks, which are global in a report) | PUBLIC attributes, types and constants - PUBLIC because `alv( )` binds a PUBLIC table directly, and the draft persists no PRIVATE attributes (AGENTS.md). `DATA ... TYPE [STANDARD] TABLE OF x` without a key gets `WITH DEFAULT KEY` written out - the same table, said (the abap2UI5 linter's `default-key-table`) |
+| the restart of the report after its list | `start_of_selection( )` begins with a `CLEAR` of the global data (its `VALUE` where it has one): the classic report started every run afresh, the class keeps its attributes from one Execute to the next. Left alone are the selection screen and what `INITIALIZATION`, `LOAD-OF-PROGRAM`, `AT SELECTION-SCREEN ...` and the FORMs they call use |
 | global `FIELD-SYMBOLS` | declared in each method that uses them |
 | `TYPE-POOLS` | dropped |
 | `INITIALIZATION`, `LOAD-OF-PROGRAM` | `initialization( )` |
@@ -201,8 +206,8 @@ class `ZR2C` must exist in the target system.
 | `F4IF_INT_TABLE_VALUE_REQUEST` with `retfield` and `value_tab` | `value_help_popup( tab = col = )` - the popup writes the picked value into the field |
 | `AT SELECTION-SCREEN` | `at_selection_screen( )`. When it reads `sy-ucomm` / `sscrfields-ucomm`, its body becomes `at_selection_screen_ucomm( ucomm )`, called by `at_selection_screen( )` with `ONLI` and by `at_user_command( )` with the user command - a push button or `USER-COMMAND` runs it as in the classic report |
 | `START-OF-SELECTION`, statements before the first event | `start_of_selection( )` |
-| `END-OF-SELECTION` | appended to `start_of_selection( )` |
-| `TOP-OF-PAGE` (only `WRITE`, `ULINE`, `SKIP`, `NEW-LINE`, `FORMAT`) | private method `top_of_page( )`, called at the start of the list and after each `NEW-PAGE` |
+| `END-OF-SELECTION` | appended to `start_of_selection( )`; when `START-OF-SELECTION` has a `RETURN` or `STOP`, a private method `end_of_selection( )` that `start_of_selection( )` calls at its end and before each of them - the classic runtime went on with `END-OF-SELECTION` |
+| `TOP-OF-PAGE` (only `WRITE`, `ULINE`, `SKIP`, `NEW-LINE`, `FORMAT`) | `top_of_page( )`, which the runtime calls before the first line of the list - a run that writes nothing else shows no list, as in the classic report - and the class calls after each `NEW-PAGE` |
 | `AT LINE-SELECTION` | `at_line_selection( row hide )`; `sy-lilli` / `sy-curow` become `row` |
 | `HIDE f` | `hide = f` at the hotspot of the line it follows (the first write of the line becomes the hotspot if it has none); several fields are joined with a tab. `at_line_selection( )` restores them into their fields first, as the classic HIDE does |
 | `AT USER-COMMAND` | `at_user_command( ucomm )`; `sy-ucomm` becomes `ucomm` |
@@ -219,11 +224,15 @@ class `ZR2C` must exist in the target system.
 | `MESSAGE e001(cls) WITH ...`, `MESSAGE ID ... TYPE ... NUMBER ... WITH ...` | `MESSAGE ... INTO DATA(lv_message).` `message( text = lv_message type = )` - the message class stays the source of the text |
 | `MESSAGE ... TYPE 'E' / 'A'` | followed by `RETURN` - the classic message ended the event block |
 | `MESSAGE ... TYPE 'S'/'I' DISPLAY LIKE 'E'` | type `W` (in the popover, the run goes on) |
-| `MESSAGE ... INTO` | copied |
+| `MESSAGE ... INTO` | copied; the short form `MESSAGE s013 ... INTO` gets the message class of `MESSAGE-ID` (`s013(zr2c)`) - a class has no `MESSAGE-ID` |
 | `FORM f TABLES t STRUCTURE s USING [VALUE(]u[)] TYPE x CHANGING c TYPE y` | private method `f IMPORTING u CHANGING t c`: a `USING` parameter the FORM writes becomes `CHANGING`; `TABLES` gets a table type of its own (`ty_t_s`); an untyped parameter is `TYPE any` with a TODO |
 | `PERFORM f TABLES ... USING ... CHANGING ...` | `f( a )`, `f( p1 = a p2 = b )` or `f( EXPORTING ... CHANGING ... )` with the parameter names of the FORM |
 | `LEAVE LIST-PROCESSING` | `leave_to_selection_screen( )` |
-| `STOP` | `RETURN` and a TODO |
+| `STOP` | in `START-OF-SELECTION` `end_of_selection( )` and `RETURN`, elsewhere `RETURN` and a TODO |
+| `sy-repid`, `sy-cprog` | the name of the report as a literal (`'ZR2C_06_DYNAMIC'`) - in a class they name the class pool, and the transpiled runtime has none |
+| `x [NOT] IN range` in a condition (`IF`, `CHECK`, `WHILE`, `xsdbool( )`, ...) | `z2ui5_cl_cgui_context=>range_check( val = x range = range ) = abap_true` - the transpiled runtime's `IN` knows `I EQ`, `E EQ` and `I CP` only (AGENTS.md); ABAP SQL keeps its `IN`, a value list `IN ( a, b )` stays |
+| `LOOP AT t INTO wa WHERE ... IN range ...` | `LOOP AT t INTO wa.` with `IF <the condition on wa> = abap_false. CONTINUE. ENDIF.` (also `ASSIGNING` and `REFERENCE INTO`) and a TODO about `sy-subrc` |
+| a FORM parameter `TYPE p` (generic) | `LIKE` the data object every `PERFORM` passes, else kept with a TODO - the transpiled runtime has no generic packed type and fails to describe the class |
 | `SET PF-STATUS`, `SET TITLEBAR` | dropped with a TODO |
 | local classes and interfaces | `.clas.locals_imp.abap`; their definitions go to `.clas.locals_def.abap` when the class is typed with them |
 | ABAP SQL (`SELECT`, `INSERT`, `UPDATE`, `MODIFY`, `DELETE` on the database) | strict mode, as ABAP Cloud requires: host variables escaped with `@`, the field list separated by commas - syntax only, the parser tells a host variable from a column |
@@ -290,8 +299,10 @@ The conversion is deterministic so that the step after it can be iterative:
      check:cloud` with the class in `src/`) - released APIs and strict syntax;
    - the **abap2UI5 linter** (`npx abap2ui5lint`) - the views against the
      UI5 1.71 floor;
-   - **ABAP Unit** in the transpiled abap2UI5 backend (as `unit.yaml` runs the
-     tests of this repository) - the behaviour, pinned before the change.
+   - the **transpiled abap2UI5 backend** - the behaviour, pinned before the
+     change: ABAP Unit (as `unit.yaml` runs the tests of this repository), or
+     the report operated through its screen the way
+     `test/runtime/runtime.test.mjs` does it for the corpus.
 4. Repeat until all three are clean and the work list is empty.
 
 The refusals stay with a person: they are the places where the report does
@@ -329,6 +340,7 @@ one call per line, the parameters aligned.
 ```bash
 npm run test:report2cloud
 UPDATE_SNAPSHOTS=1 node --test tools/report2cloud/test/convert.test.mjs   # after an intended change - review the diff
+npm run test:report2cloud:runtime                                          # the classes run - opt-in, see below
 ```
 
 - `test/corpus/` - classic reports written to exercise the mapping table: a
@@ -350,7 +362,43 @@ UPDATE_SNAPSHOTS=1 node --test tools/report2cloud/test/convert.test.mjs   # afte
   there must be no finding at all - the flight tables of the corpus exist on
   premise, `test/ddic/` has stubs of them. With the ABAP Cloud config every
   finding must be about an object the migration report lists as not released,
-  and the reports that use none must be clean. abaplint clones the
-  dependencies of the configs, so the test needs git and network.
+  and the reports that use none must be clean. With the 7.02 gate
+  (`.github/abaplint/abap_702.jsonc`, as `check-702.sh` runs it: the copy is
+  downported with `abaplint --fix`, the popups beside it) and with the
+  **abap2UI5 linter** (`abap2ui5lint.jsonc`, `--all-classes` - a report class
+  builds no view of its own, the ABAP rules apply) there must be no finding
+  in a generated class. abaplint clones the dependencies of the configs, so
+  the test needs git and network.
+- `test/runtime/runtime.test.mjs` - **every generated class must run** - a
+  golden master lite: the corpus is converted, the classes are transpiled
+  with `src/01` and the popups against `@abap2ui5/node-runtime` at the
+  release `abaplint.jsonc` pins, and served on loopback. `test/ddic/` is
+  transpiled with them; the boot creates the tables from the transpiler's own
+  schema and inserts the rows of `test/runtime/seed.mjs` (the flight tables,
+  dates relative to today, and the messages of `ZR2C` in `T100`). Every report
+  is then operated as a user operates it - start, fill the selection screen,
+  Execute, click a hotspot or a grid row, go back and run again - through the
+  JSON protocol of the UI5 frontend, and the answers are read semantically:
+  the agent snapshot (fields, actions, tables, messages) and the list line by
+  line. The expectations are written by hand: what the classic report prints
+  for the seeded rows. It reuses the abap2UI5 MCP server as a library - its
+  npm backend (`lib/npm-backend.mjs`: the runtime install, open-abap-core,
+  the import rewrite) and its app client (`lib/appclient.mjs`,
+  `lib/snapshot.mjs`) - from a checkout at `MCP_SERVER_HOME` or
+  `../mcp-server`; without one every test is skipped with the reason. The
+  runtime is installed into `A2UI5_MCP_WORKSPACE` (default `~/.abap2ui5-mcp`,
+  the MCP server's), the popups come from `POPUPS_HOME`, `.deps/popups`,
+  `../popups` or a clone into `build/popups`. About 20 s on a warm workspace;
+  `REPORT2CLOUD_RUNTIME_PORT` (default 4481) is the port,
+  `REPORT2CLOUD_RUNTIME_KEEP=1` keeps the build (`<runtime>/.r2c-*`).
 
-CI runs all of it in `.github/workflows/report2cloud.yaml`.
+  What the runtime found that the lint did not: global data that grew from
+  one Execute to the next, END-OF-SELECTION skipped after a RETURN, a
+  TOP-OF-PAGE header shown as a list of its own, `MESSAGE s013 ... INTO`
+  without its message class, `sy-repid`, a generic `TYPE p` parameter and
+  `IN` on a select-option - each is a row of the mapping table now. One gap
+  is the runtime's own and stays a TODO test: `round( val dec = 2 )` is not
+  implemented in `@abaplint/runtime`.
+
+CI runs all of it in `.github/workflows/report2cloud.yaml` - the runtime test
+as a job of its own, with mcp-server cloned beside the repository.

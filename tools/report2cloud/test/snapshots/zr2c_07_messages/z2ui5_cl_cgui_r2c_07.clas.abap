@@ -57,6 +57,9 @@ CLASS z2ui5_cl_cgui_r2c_07 IMPLEMENTATION.
 
   METHOD start_of_selection.
 
+    " every run starts with the global data of a fresh start - the classic report restarted after its list
+    CLEAR gv_text.
+
     CASE p_type.
       WHEN 'S'.
         message( 'A status message' ).
@@ -72,7 +75,7 @@ CLASS z2ui5_cl_cgui_r2c_07 IMPLEMENTATION.
         message( text = gv_text
                  type = `W` ).
     ENDCASE.
-    MESSAGE s013 WITH p_num INTO gv_text.
+    MESSAGE s013(zr2c) WITH p_num INTO gv_text.
     list( )->new_line(
         )->write( `Last message:`
         )->write( gv_text ).

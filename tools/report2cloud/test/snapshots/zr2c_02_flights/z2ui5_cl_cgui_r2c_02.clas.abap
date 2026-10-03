@@ -18,7 +18,7 @@ CLASS z2ui5_cl_cgui_r2c_02 DEFINITION PUBLIC
 
     " global data of the report
     DATA:
-      gt_flight TYPE STANDARD TABLE OF ty_flight,
+      gt_flight TYPE STANDARD TABLE OF ty_flight WITH DEFAULT KEY,
       gs_flight TYPE ty_flight,
       gv_total  TYPE i.
 
@@ -32,10 +32,11 @@ CLASS z2ui5_cl_cgui_r2c_02 DEFINITION PUBLIC
     METHODS selection_screen REDEFINITION.
     METHODS at_selection_screen REDEFINITION.
     METHODS start_of_selection REDEFINITION.
+    METHODS top_of_page REDEFINITION.
     METHODS at_line_selection REDEFINITION.
 
   PRIVATE SECTION.
-    METHODS top_of_page.
+    METHODS end_of_selection.
 ENDCLASS.
 
 
@@ -83,7 +84,10 @@ CLASS z2ui5_cl_cgui_r2c_02 IMPLEMENTATION.
 
   METHOD start_of_selection.
 
-    top_of_page( ).
+    " every run starts with the global data of a fresh start - the classic report restarted after its list
+    CLEAR: gt_flight,
+           gs_flight,
+           gv_total.
 
     SELECT carrid, connid, fldate, price, currency, seatsmax, seatsocc
       FROM sflight
@@ -94,6 +98,7 @@ CLASS z2ui5_cl_cgui_r2c_02 IMPLEMENTATION.
     IF sy-subrc <> 0.
       MESSAGE s002(zr2c) WITH p_carrid INTO DATA(lv_message).
       message( lv_message ).
+      end_of_selection( ).
       RETURN.
     ENDIF.
 
@@ -117,11 +122,24 @@ CLASS z2ui5_cl_cgui_r2c_02 IMPLEMENTATION.
     ENDLOOP.
 
     " END-OF-SELECTION
-    list( )->skip( ).
+    end_of_selection( ).
+
+  ENDMETHOD.
+
+  METHOD top_of_page.
+
     list( )->new_line(
-        )->write( `Seats occupied in total:`
-        )->write( val   = gv_total
-                  color = z2ui5_cl_cgui_list=>cs_color-total ).
+        )->write( val   = 'Airline'
+                  color = z2ui5_cl_cgui_list=>cs_color-key
+        )->write( val   = 'No.'
+                  color = z2ui5_cl_cgui_list=>cs_color-key
+        )->write( val   = 'Date'
+                  color = z2ui5_cl_cgui_list=>cs_color-key
+        )->write( val   = 'Price'
+                  color = z2ui5_cl_cgui_list=>cs_color-key
+        )->write( val   = 'Occupied'
+                  color = z2ui5_cl_cgui_list=>cs_color-key ).
+    list( )->uline( ).
 
   ENDMETHOD.
 
@@ -145,20 +163,13 @@ CLASS z2ui5_cl_cgui_r2c_02 IMPLEMENTATION.
 
   ENDMETHOD.
 
-  METHOD top_of_page.
+  METHOD end_of_selection.
 
+    list( )->skip( ).
     list( )->new_line(
-        )->write( val   = 'Airline'
-                  color = z2ui5_cl_cgui_list=>cs_color-key
-        )->write( val   = 'No.'
-                  color = z2ui5_cl_cgui_list=>cs_color-key
-        )->write( val   = 'Date'
-                  color = z2ui5_cl_cgui_list=>cs_color-key
-        )->write( val   = 'Price'
-                  color = z2ui5_cl_cgui_list=>cs_color-key
-        )->write( val   = 'Occupied'
-                  color = z2ui5_cl_cgui_list=>cs_color-key ).
-    list( )->uline( ).
+        )->write( `Seats occupied in total:`
+        )->write( val   = gv_total
+                  color = z2ui5_cl_cgui_list=>cs_color-total ).
 
   ENDMETHOD.
 

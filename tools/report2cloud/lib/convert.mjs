@@ -175,7 +175,7 @@ const RESERVED_METHODS = new Set(["initialization", "selection_screen", "at_sele
   "at_selection_screen_on", "at_selection_screen", "start_of_selection", "at_line_selection",
   "at_user_command", "at_value_request", "write", "list", "alv", "message", "popup_to_confirm",
   "value_help_popup", "leave_to_selection_screen", "set_title", "set_variant", "client",
-  "z2ui5_if_app~main", "main", "top_of_page", "at_selection_screen_ucomm", "constructor"]);
+  "z2ui5_if_app~main", "main", "top_of_page", "at_selection_screen_ucomm", "end_of_selection", "constructor"]);
 
 const BUILTIN_TYPES = new Set(["string", "xstring", "i", "int1", "int2", "int4", "int8", "d", "t", "f", "c", "n",
   "x", "p", "decfloat16", "decfloat34", "utclong", "abap_bool", "any", "data", "simple", "clike", "csequence",
@@ -879,10 +879,9 @@ class Converter {
         this.refuse(bad, "TOP-OF-PAGE with other statements than WRITE, ULINE, SKIP, NEW-LINE and FORMAT - the list has no page header; only a fixed header is converted");
       } else {
         this.topOfPage = true;
-        this.map(e.stmt, "private method `top_of_page( )`, called at the start of `start_of_selection( )` and after each NEW-PAGE");
-        this.todo(e.stmt, "TOP-OF-PAGE: the header is written once at the start of the list and after each NEW-PAGE - not at every page break; sy-pagno is not set");
-        this.methodDefs.push({ name: "top_of_page", lines: ["    METHODS top_of_page."] });
-        this.privateMethods = [...(this.privateMethods ?? []), { name: "top_of_page", body: this.convertBody(e.stmts, { method: "top_of_page" }) }];
+        this.map(e.stmt, "`top_of_page( )` - runs before the first line of the list, and is called after each NEW-PAGE");
+        this.todo(e.stmt, "TOP-OF-PAGE: the header is written before the first line of the list and after each NEW-PAGE - not at every page break; sy-pagno is not set");
+        methods.push({ name: "top_of_page", body: this.convertBody(e.stmts, { method: "top_of_page" }) });
       }
       for (const more of top.slice(1)) this.refuse(more.stmt, "a second TOP-OF-PAGE");
     }
@@ -890,17 +889,33 @@ class Converter {
     // START-OF-SELECTION + END-OF-SELECTION
     {
       const body = [];
-      if (this.topOfPage) body.push("top_of_page( ).");
-      for (const e of byKind("StartOfSelection")) {
+      const sos = byKind("StartOfSelection");
+      if (sos.length || byKind("EndOfSelection").length) body.push(...this.resetGlobals());
+      // a RETURN or STOP of START-OF-SELECTION ended that block only: the
+      // runtime went on with END-OF-SELECTION, which is then a method of its
+      // own that start_of_selection( ) calls before it returns
+      this.endOfSelection = byKind("EndOfSelection").length
+        && sos.some((e) => e.stmts.some((x) => ["Return", "Stop"].includes(kind(x)))) ? [] : undefined;
+      for (const e of sos) {
         if (!e.implicit) this.map(e.stmt, "`start_of_selection( )`");
         else this.map(e.stmt, "`start_of_selection( )` - statements before the first event block");
         if (body.length) body.push("");
         body.push(...this.convertBody(e.stmts, { method: "start_of_selection" }));
       }
       for (const e of byKind("EndOfSelection")) {
+        if (this.endOfSelection) {
+          this.map(e.stmt, "private method `end_of_selection( )`, called at the end of `start_of_selection( )` and before each of its RETURNs");
+          this.endOfSelection.push(...this.convertBody(e.stmts, { method: "end_of_selection" }));
+          continue;
+        }
         this.map(e.stmt, "appended to `start_of_selection( )`");
         body.push("", "\" END-OF-SELECTION");
         body.push(...this.convertBody(e.stmts, { method: "start_of_selection" }));
+      }
+      if (this.endOfSelection) {
+        body.push("", "\" END-OF-SELECTION", "end_of_selection( ).");
+        this.methodDefs.push({ name: "end_of_selection", lines: ["    METHODS end_of_selection."] });
+        this.privateMethods = [...(this.privateMethods ?? []), { name: "end_of_selection", body: this.endOfSelection }];
       }
       if (body.length) methods.push({ name: "start_of_selection", body });
     }
@@ -990,7 +1005,7 @@ class Converter {
     lines.push("");
     lines.push("  PROTECTED SECTION.");
     const order = ["initialization", "selection_screen", "at_selection_screen_output", "at_selection_screen_on",
-      "at_selection_screen", "start_of_selection", "at_line_selection", "at_user_command", "at_value_request"];
+      "at_selection_screen", "start_of_selection", "top_of_page", "at_line_selection", "at_user_command", "at_value_request"];
     methods.sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
     for (const m of methods) lines.push(`    METHODS ${m.name} REDEFINITION.`);
     lines.push("");
@@ -1190,6 +1205,7 @@ class Converter {
           continue;
         }
         if (this.tablesKept.has(name)) {
+          this.resetCandidate(s);
           heading("global data of the report");
           push(`DATA ${name} TYPE ${name}.`);
           this.map(s, `typed work area \`DATA ${name} TYPE ${name}\``);
@@ -1239,6 +1255,7 @@ class Converter {
           }
         }
         heading(isType ? "types of the report" : isConst ? "constants of the report" : "global data of the report");
+        if ((k === "Data" || k === "DataBegin" || k === "Ranges") && !this.insideBegin(s)) this.resetCandidate(s);
         if (k === "Ranges") {
           const forNode = child(s, "SimpleFieldChain2");
           const forText = lc(nodeText(forNode));
@@ -1251,6 +1268,9 @@ class Converter {
         if (s.getColon()) {
           const group = [s];
           while (this.decls[i + 1] && sameColon(this.decls[i + 1], s)) group.push(this.decls[++i]);
+          for (const g of group.slice(1)) {
+            if ((kind(g) === "Data" || kind(g) === "DataBegin") && !this.insideBegin(g)) this.resetCandidate(g);
+          }
           const text = this.renderDeclGroup(group);
           if (text) push(text);
         } else {
@@ -1282,6 +1302,68 @@ class Converter {
       pub.push(`" ${title}`, ...list);
     }
     return { chain: renderScreenChain(chain), defaults, lowerCase };
+  }
+
+  /** a global data object start_of_selection( ) may reset (resetGlobals) -
+   *  with its start value; a structure with start values in its components
+   *  is left alone */
+  resetCandidate(s) {
+    this.resetList ??= [];
+    const name = lc(declName(s) ?? "");
+    if (!name || this.salvVars.has(name) || this.fcatVars.has(name) || this.layoutVars.has(name)) return;
+    let value;
+    const v = kind(s) === "Data" ? findAll(s, "Value")[0] : undefined;
+    if (v) {
+      const text = renderTokens(v.getTokens().slice(1)).trim();
+      if (!/^IS\s+INITIAL$/i.test(text)) value = text;
+    }
+    if (kind(s) === "DataBegin") {
+      const end = this.declEnd(this.stmts.indexOf(s));
+      const run = this.stmts.slice(this.stmts.indexOf(s), end + 1);
+      if (run.some((x) => words(x).includes("VALUE"))) return;
+    }
+    this.resetList.push({ name, value, row: s.getFirstToken().getRow() });
+  }
+
+  /**
+   * The lines that start a run of start_of_selection( ) with the global data
+   * a classic run started with. The classic report is restarted when its
+   * list is left: its global data is initial again (or has its VALUE), the
+   * selection screen keeps its input. The class keeps every attribute from
+   * one Execute to the next - a total summed up in START-OF-SELECTION grew
+   * with every run. So every global data object is reset, except the ones
+   * the selection phase uses - INITIALIZATION, LOAD-OF-PROGRAM, every AT
+   * SELECTION-SCREEN, an F4, and the FORMs they call: the classic restart
+   * ran INITIALIZATION again, and AT SELECTION-SCREEN ran before
+   * START-OF-SELECTION in the same run.
+   */
+  resetGlobals() {
+    if (!this.resetList?.length) return [];
+    const phase = this.events.filter((e) => ["Initialization", "LoadOfProgram", "AtSelectionScreen"].includes(e.kind))
+      .flatMap((e) => e.stmts);
+    const used = new Set();
+    const seenForms = new Set();
+    const visit = (stmts) => {
+      for (const s of stmts) {
+        for (const t of s.getTokens()) used.add(lc(t.getStr()));
+        if (kind(s) !== "Perform") continue;
+        const f = this.formByName.get(lc(nodeText(child(s, "FormName") ?? s)));
+        if (f && !seenForms.has(f.name)) {
+          seenForms.add(f.name);
+          visit(f.body);
+        }
+      }
+    };
+    visit(phase);
+    const reset = this.resetList.filter((r) => !used.has(r.name) && !this.screenField(r.name));
+    if (!reset.length) return [];
+    const lines = ["\" every run starts with the global data of a fresh start - the classic report restarted after its list"];
+    const cleared = reset.filter((r) => r.value === undefined).map((r) => r.name);
+    if (cleared.length === 1) lines.push(`CLEAR ${cleared[0]}.`);
+    else if (cleared.length) lines.push(`CLEAR: ${cleared.join(`,\n       `)}.`);
+    for (const r of reset.filter((x) => x.value !== undefined)) lines.push(`${r.name} = ${r.value}.`);
+    this.mapped.push({ row: reset[0].row, col: 1, classic: "global data - the report restarted after its list", target: `\`CLEAR\` of ${reset.length} global data object(s) at the start of \`start_of_selection( )\`` });
+    return lines;
   }
 
   isTables(name) {
@@ -1429,6 +1511,7 @@ class Converter {
   renderDecl(s) {
     const ov = this.rewrites(s, {});
     this.likeToType(s, ov);
+    this.tableKey(s, ov);
     const t = renderTokens(stmtTokens(s), ov, s.getColon()).replace(/^(\w+)(\s*):\s*/, "$1 ");
     const k = kind(s);
     if (k === "DataBegin" || k === "TypeBegin" || k === "ConstantBegin" || k === "TypeEnumBegin") return `${t}.`;
@@ -1457,11 +1540,31 @@ class Converter {
       if (/End$/.test(k)) depth--;
       const ov = this.rewrites(s, {});
       this.likeToType(s, ov);
+      this.tableKey(s, ov);
       const part = renderTokens(partTokens(s), ov);
       lines.push(`${"  ".repeat(depth)}${part.replace(/\n/g, `\n${"  ".repeat(depth)}`)}${i === group.length - 1 ? "." : ","}`);
       if (/Begin$/.test(k)) depth++;
     });
     return lines.join("\n");
+  }
+
+  /**
+   * DATA ... TYPE [STANDARD] TABLE OF x without a key clause: WITH DEFAULT
+   * KEY written out. The same table as before - a DATA declaration without a
+   * key has the default key - but said, because the abap2UI5 linter
+   * (default-key-table) reads the implicit key as a trap: SORT, COLLECT and
+   * DELETE ADJACENT DUPLICATES use it unasked.
+   */
+  tableKey(s, ov) {
+    if (kind(s) !== "Data") return;
+    for (const tt of findAll(s, "TypeTable")) {
+      const toks = tt.getTokens();
+      const w = toks.map((t) => uc(t.getStr()));
+      if (!w.includes("TABLE") || !w.includes("OF") || ["KEY", "RANGE", "SORTED", "HASHED", "ANY", "INDEX", "OCCURS", "HEADER"].some((x) => w.includes(x))) continue;
+      const end = w.indexOf("INITIAL") > 0 ? w.indexOf("INITIAL") - 1 : toks.length - 1;
+      const last = toks[end];
+      ov.set(key(last), `${ov.has(key(last)) ? ov.get(key(last)) : last.getStr()} WITH DEFAULT KEY`);
+    }
   }
 
   likeToType(s, ov) {
@@ -1508,6 +1611,7 @@ class Converter {
         type = p.kind === "tables" ? "TYPE STANDARD TABLE" : "TYPE any";
         if (p.kind !== "tables") this.todo(f.stmt, `FORM ${f.name}: the parameter ${p.name} has no type - TYPE any, give it the type it has`);
       }
+      if (/^TYPE p$/i.test(type)) type = this.genericPacked(f, p, type);
       p.type = type;
       if (p.kind === "using" && !p.written) imp.push(`${p.byValue ? `VALUE(${p.name})` : p.name} ${type}`);
       else if (p.kind === "using" && p.byValue) imp.push(`VALUE(${p.name}) ${type}`);
@@ -1536,6 +1640,37 @@ class Converter {
     lines[lines.length - 1] += ".";
     this.methodDefs.push({ name: f.method, lines });
     this.currentForm = undefined;
+  }
+
+  /**
+   * A FORM parameter typed with the generic TYPE p. Valid in a method, but
+   * the transpiled runtime has no generic packed type (abaplint transpiler:
+   * typeTodoPGenericType) and fails to describe the class - before the first
+   * screen. When every PERFORM passes the same global data object, the
+   * parameter is typed LIKE it, which is the type the FORM worked with;
+   * otherwise it stays generic, with a TODO.
+   */
+  genericPacked(f, p, type) {
+    const actuals = new Set();
+    let calls = 0;
+    for (const s of this.stmts) {
+      if (kind(s) !== "Perform" || lc(nodeText(child(s, "FormName") ?? s)) !== f.name) continue;
+      calls++;
+      const sec = { tables: "PerformTables", using: "PerformUsing", changing: "PerformChanging" };
+      const tables = child(s, sec.tables) ? children(child(s, sec.tables)) : [];
+      const other = [...(child(s, sec.using) ? children(child(s, sec.using)) : []), ...(child(s, sec.changing) ? children(child(s, sec.changing)) : [])];
+      const list = p.kind === "tables" ? tables : other;
+      const at = f.params.filter((x) => (x.kind === "tables") === (p.kind === "tables")).indexOf(p);
+      if (list[at]) actuals.add(lc(nodeText(list[at])));
+    }
+    const [only] = actuals;
+    if (calls && actuals.size === 1 && /^[a-z_][\w]*$/.test(only) && this.globalData.has(only)
+      && (!this.isTables(only) || this.tablesKept.has(only))) {
+      this.todo(f.stmt, `FORM ${f.name}: the generic parameter ${p.name} TYPE p is typed LIKE ${only}, the data object every PERFORM passes - the transpiled runtime has no generic packed type`);
+      return `LIKE ${only}`;
+    }
+    this.todo(f.stmt, `FORM ${f.name}: the parameter ${p.name} is the generic TYPE p - valid in a method, but the transpiled abap2UI5 runtime cannot describe the class; give it a complete type (p LENGTH n DECIMALS d)`);
+    return type;
   }
 
   tablesType(structure, isData) {
@@ -1791,6 +1926,13 @@ class Converter {
       }
       case "Loop": case "Do": case "While": case "LoopExtract": case "Provide":
         b.loopDepth++;
+        if (k === "Loop") {
+          const lines = this.loopWhereIn(s, b);
+          if (lines) {
+            out.push(...lines);
+            return;
+          }
+        }
         break;
       case "EndLoop": case "EndSelect": case "EndDo": case "EndWhile": case "EndProvide":
         b.loopDepth--;
@@ -1824,10 +1966,21 @@ class Converter {
         return;
       }
       case "Stop":
+        if (b.ctx.method === "start_of_selection" && this.endOfSelection) {
+          out.push("end_of_selection( ).", "RETURN.");
+          this.map(s, "`end_of_selection( )` and `RETURN` - STOP went on with END-OF-SELECTION");
+          return;
+        }
         out.push("RETURN.");
-        this.todo(s, "STOP became RETURN - END-OF-SELECTION, appended to start_of_selection( ), does not run after it");
+        this.todo(s, this.endOfSelection
+          ? "STOP became RETURN - in a FORM it only leaves the method; the classic STOP ended START-OF-SELECTION and went on with END-OF-SELECTION (end_of_selection( ))"
+          : "STOP became RETURN - it leaves the method, the classic STOP ended the event block");
         this.map(s, "`RETURN`");
         return;
+      case "Return":
+        // RETURN ended START-OF-SELECTION - END-OF-SELECTION still ran
+        if (b.ctx.method === "start_of_selection" && this.endOfSelection) out.push("end_of_selection( ).");
+        break;
       case "CallFunction":
         if (this.callFunction(s, b)) return;
         break;
@@ -1889,6 +2042,7 @@ class Converter {
         }
         const ov = this.rewrites(s, b.ctx);
         this.likeToType(s, ov);
+        this.tableKey(s, ov);
         out.push(`${renderTokens(stmtTokens(s), ov, s.getColon()).replace(/^(\w+)(\s*):\s*/, "$1 ")}.`);
         return;
       }
@@ -1954,6 +2108,7 @@ class Converter {
       if (/End$/.test(k)) depth--;
       const ov = this.rewrites(s, b.ctx, b);
       this.likeToType(s, ov);
+      this.tableKey(s, ov);
       const pad = "  ".repeat(depth);
       lines.push(`${pad}${renderTokens(partTokens(s), ov).replace(/\n/g, `\n${pad}`)}${idx === group.length - 1 ? "." : ","}`);
       if (/Begin$/.test(k)) depth++;
@@ -2061,6 +2216,17 @@ class Converter {
         this.ucommTodo = new Set([...(this.ucommTodo ?? []), s]);
         this.todo(s, "sy-ucomm is not set by abap-cloud-gui - the user command arrives as ucomm in at_user_command( ); pass it to where it is read");
       }
+      if (t === "sy" && next === "-" && ["repid", "cprog"].includes(next2)) {
+        // in a class sy-repid is the class pool (ZCL_X=====CP) - and the
+        // transpiled runtime has none; the report read its own name
+        ov.set(key(toks[i]), `'${uc(this.programName)}'`);
+        ov.set(key(toks[i + 1]), null);
+        ov.set(key(toks[i + 2]), null);
+        if (!this.repidNoted) {
+          this.repidNoted = true;
+          this.note(`sy-repid / sy-cprog are the name of the report, '${uc(this.programName)}' - in a class they name the class pool`);
+        }
+      }
       if (ctx.lineSelection && t === "sy" && next === "-" && ["lilli", "curow"].includes(next2)) {
         ov.set(key(toks[i]), "row");
         ov.set(key(toks[i + 1]), null);
@@ -2095,8 +2261,92 @@ class Converter {
         ov.set(key(toks[i]), literal(ICONS[t]));
       }
     }
+    // x IN range in a condition: range_check( ) - see inCompare( )
+    for (const cmp of findAll(s, "Compare")) {
+      const text = this.inCompare(cmp, ov);
+      if (text === undefined) continue;
+      const toks = cmp.getTokens();
+      ov.set(key(toks[0]), text);
+      for (const t of toks.slice(1)) ov.set(key(t), null);
+      this.mapOnce(s, cmp, "`z2ui5_cl_cgui_context=>range_check( val range )` - IN outside ABAP SQL");
+    }
     this.strictSql(s, ov);
     return ov;
+  }
+
+  /**
+   * `x [NOT] IN range` (a Compare, or the ComponentCompare of a LOOP ...
+   * WHERE with `prefix` as the work area the component is read from) as a
+   * call of z2ui5_cl_cgui_context=>range_check( ) - the samples' rule
+   * (AGENTS.md): IN of the transpiled runtime knows I EQ, E EQ and I CP only,
+   * and a select-option holds BT, GE, NE, ... On a system both are the same.
+   * ABAP SQL keeps its IN (an SQLCompare). undefined when cmp is no IN on a
+   * range (`IN ( a, b )` is a value list and stays).
+   */
+  inCompare(cmp, ov, prefix) {
+    const ch = cmp.getChildren();
+    const at = ch.findIndex((c) => isToken(c) && uc(c.get().getStr()) === "IN");
+    if (at < 0) return undefined;
+    const right = ch[at + 1];
+    if (!right || isToken(right) || kind(right) !== "Source" || ch.length > at + 2) return undefined;
+    const left = ch.slice(0, at).find((c) => !isToken(c));
+    if (!left) return undefined;
+    const negate = ch.slice(0, at).filter((c) => isToken(c) && uc(c.get().getStr()) === "NOT").length % 2 === 1;
+    let val = nodeText(left, ov);
+    if (prefix !== undefined) val = lc(val) === "table_line" ? prefix.replace(/(->|-)$/, "") : `${prefix}${val}`;
+    return `z2ui5_cl_cgui_context=>range_check( val = ${val} range = ${nodeText(right, ov)} ) = ${negate ? "abap_false" : "abap_true"}`;
+  }
+
+  /** map( ) once per node - rewrites( ) runs more than once for a statement */
+  mapOnce(s, node, target) {
+    this.mappedNodes ??= new Set();
+    const k = key(node.getFirstToken());
+    if (this.mappedNodes.has(k)) return;
+    this.mappedNodes.add(k);
+    this.map(s, target);
+  }
+
+  /** LOOP AT ... WHERE with an IN on a range: the WHERE becomes a CONTINUE
+   *  at the top of the loop (a method call cannot stand in a LOOP WHERE).
+   *  Lines, or undefined when the loop has no such condition or no work
+   *  area to read the components from. */
+  loopWhereIn(s, b) {
+    const cond = child(s, "ComponentCond");
+    if (!cond || !findAll(cond, "ComponentCompare").some((c) => this.inCompare(c, new Map(), "") !== undefined)) return undefined;
+    const target = child(s, "LoopTarget");
+    if (!target) return undefined;
+    const t = lc(renderTokens(target.getTokens()));
+    let m;
+    let prefix;
+    if ((m = /^into\s+(?:data\s*\(\s*)?([\w/]+)\s*\)?$/.exec(t))) prefix = `${m[1]}-`;
+    else if ((m = /^assigning\s+(?:field-symbol\s*\(\s*)?(<[\w/]+>)\s*\)?$/.exec(t))) prefix = `${m[1]}-`;
+    else if ((m = /^reference\s+into\s+(?:data\s*\(\s*)?([\w/]+)\s*\)?$/.exec(t))) prefix = `${m[1]}->`;
+    else return undefined;
+    const ov = this.rewrites(s, b.ctx, b);
+    const condOv = new Map(ov);
+    for (const cc of findAll(cond, "ComponentCompare")) {
+      const text = this.inCompare(cc, ov, prefix);
+      const toks = cc.getTokens();
+      if (text !== undefined) {
+        condOv.set(key(toks[0]), text);
+        for (const x of toks.slice(1)) condOv.set(key(x), null);
+        continue;
+      }
+      for (const chain of findAll(cc, "ComponentChainSimple")) {
+        const first = chain.getFirstToken();
+        const name = lc(first.getStr());
+        condOv.set(key(first), name === "table_line" ? prefix.replace(/(->|-)$/, "") : `${prefix}${first.getStr()}`);
+      }
+    }
+    const toks = stmtTokens(s);
+    const whereAt = toks.findIndex((x) => uc(x.getStr()) === "WHERE" && !cond.getTokens().includes(x));
+    const head = renderTokens(toks.slice(0, whereAt), ov).replace(/\s+$/, "");
+    const condText = renderTokens(cond.getTokens(), condOv).replace(/\s*\n\s*/g, " ");
+    const single = cond.getChildren().length === 1 && /= abap_(true|false)$/.test(condText) && !/\b(AND|OR)\b/i.test(condText);
+    const skipIf = single ? condText.replace(/= abap_(true|false)$/, (m, v) => `= abap_${v === "true" ? "false" : "true"}`) : `NOT ( ${condText} )`;
+    this.mapOnce(s, cond, "`LOOP AT ...` and the WHERE as `IF ... CONTINUE. ENDIF.` at the top of the loop - `range_check( )` for the IN");
+    this.todo(s, "LOOP AT ... WHERE with IN on a range became a CONTINUE at the top of the loop - sy-subrc after ENDLOOP is 0 when the table has lines, also when none matched");
+    return [`${head}.`, `  IF ${skipIf}.`, "    CONTINUE.", "  ENDIF."];
   }
 
   /** ABAP SQL in strict mode, as ABAP Cloud demands it: host variables
@@ -2277,7 +2527,22 @@ class Converter {
     const w = words(s);
     const ov = this.rewrites(s, b.ctx, b);
     if (w.includes("INTO")) {
-      // MESSAGE ... INTO is no output - copied
+      // MESSAGE ... INTO is no output - copied, with the message class of
+      // REPORT ... MESSAGE-ID written out: a class has no MESSAGE-ID, and the
+      // short form e001 names no class of its own
+      const src = child(s, "MessageSource");
+      const tn = src && child(src, "MessageTypeAndNumber");
+      if (tn && !child(src, "MessageClass")) {
+        const msgClass = this.header?.messageClass;
+        if (!msgClass) {
+          this.refuse(s, "MESSAGE without a message class - neither in the statement nor MESSAGE-ID of REPORT");
+          return;
+        }
+        const last = tn.getLastToken();
+        ov.set(key(last), `${ov.has(key(last)) ? ov.get(key(last)) : last.getStr()}(${lc(msgClass)})`);
+        this.messageClasses = new Set([...(this.messageClasses ?? []), uc(msgClass)]);
+        this.map(s, "`MESSAGE ... INTO` with the message class of MESSAGE-ID");
+      }
       b.out.push(`${renderTokens(stmtTokens(s), ov)}.`);
       return;
     }

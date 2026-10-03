@@ -22,6 +22,7 @@ The class uses no database table, DDIC type, function module, class or message c
 Layout, formatting and behaviour of the classic report that the list, the ALV or the selection screen of abap-cloud-gui do not have:
 
 - SELECTION-SCREEN SKIP / ULINE / POSITION - the form lays out the fields by itself (2×)
+- sy-repid / sy-cprog are the name of the report, 'ZR2C_06_DYNAMIC' - in a class they name the class pool
 - character parameters without LOWER CASE: the classic screen converted the input to upper case, the UI5 input does not - add to_upper( ) where the case matters
 
 ## Mapped

@@ -5,7 +5,7 @@
 | Source | `zr2c_04_salv.prog.abap` |
 | Text pool | none - texts are placeholders, see the TODOs |
 | Result | **converted** - `z2ui5_cl_cgui_r2c_04.clas.abap`, `z2ui5_cl_cgui_r2c_04.clas.xml` |
-| Mapped | 28 construct(s) |
+| Mapped | 29 construct(s) |
 | TODO | 2 |
 | Release state to check | 1 object(s) |
 
@@ -34,6 +34,7 @@ Layout, formatting and behaviour of the classic report that the list, the ALV or
 | Line | Classic | abap-cloud-gui |
 |---|---|---|
 | 7 | `REPORT zr2c_04_salv` | the class, `INHERITING FROM z2ui5_cl_cgui_report` |
+| 9 | `global data - the report restarted after its list` | `CLEAR` of 2 global data object(s) at the start of `start_of_selection( )` |
 | 11 | `DATA go_alv TYPE REF TO cl_salv_table` | dropped - the ALV object, field catalog or layout is the alv( ) chain now |
 | 12 | `DATA go_columns TYPE REF TO cl_salv_columns_table` | dropped - the ALV object, field catalog or layout is the alv( ) chain now |
 | 13 | `DATA go_column TYPE REF TO cl_salv_column_table` | dropped - the ALV object, field catalog or layout is the alv( ) chain now |

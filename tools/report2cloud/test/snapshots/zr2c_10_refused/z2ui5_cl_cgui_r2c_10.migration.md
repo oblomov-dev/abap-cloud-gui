@@ -5,7 +5,7 @@
 | Source | `zr2c_10_refused.prog.abap` |
 | Text pool | none - texts are placeholders, see the TODOs |
 | Result | **refused** - 7 statement(s) cannot be mapped, no class written |
-| Mapped | 4 construct(s) |
+| Mapped | 5 construct(s) |
 | TODO | 1 |
 | Release state to check | 0 object(s) |
 
@@ -40,6 +40,7 @@ Layout, formatting and behaviour of the classic report that the list, the ALV or
 | Line | Classic | abap-cloud-gui |
 |---|---|---|
 | 7 | `REPORT zr2c_10_refused` | the class, `INHERITING FROM z2ui5_cl_cgui_report` |
+| 17 | `global data - the report restarted after its list` | `CLEAR` of 3 global data object(s) at the start of `start_of_selection( )` |
 | 21 | `FIELD-SYMBOLS <gv_vbeln> TYPE any` | declared in each method that uses it |
 | 23 | `PARAMETERS p_vbeln TYPE c LENGTH 10` | attribute `p_vbeln`, `screen->parameter( )` |
 | 25 | `START-OF-SELECTION` | `start_of_selection( )` |

@@ -98,8 +98,12 @@ test("BEGIN OF BLOCK WITH FRAME TITLE TEXT-001: the text of the text pool", () =
 
 test("TOP-OF-PAGE, END-OF-SELECTION, HIDE and AT LINE-SELECTION", () => {
   const abap = classOf("zr2c_02_flights");
-  assert.match(abap, /METHOD start_of_selection\.\n\n {4}top_of_page\( \)\./);
-  assert.match(abap, /" END-OF-SELECTION\n {4}list\( \)->skip\( \)\./);
+  assert.match(abap, /METHOD start_of_selection\.\n\n {4}" every run starts [^\n]*\n {4}CLEAR: gt_flight,\n {11}gs_flight,\n {11}gv_total\.\n\n {4}SELECT /);
+  assert.match(abap, /METHODS top_of_page REDEFINITION\./);
+  // START-OF-SELECTION has a RETURN, after which the classic END-OF-SELECTION still ran
+  assert.match(abap, /message\( lv_message \)\.\n {6}end_of_selection\( \)\.\n {6}RETURN\./);
+  assert.match(abap, /" END-OF-SELECTION\n {4}end_of_selection\( \)\.\n\n {2}ENDMETHOD\./);
+  assert.match(abap, /METHOD end_of_selection\.\n\n {4}list\( \)->skip\( \)\./);
   assert.match(abap, /hide {4}= \|\{ gs_flight-carrid \}\\t\{ gs_flight-connid \}\\t\{ gs_flight-fldate \}\|/);
   assert.match(abap, /SPLIT hide AT \|\\t\| INTO TABLE DATA\(lt_hide\)\.\n {4}gs_flight-carrid = VALUE #\( lt_hide\[ 1 \] OPTIONAL \)\./);
 });
@@ -116,7 +120,7 @@ test("MESSAGE: literal, text symbol, message class short and long form, DISPLAY 
   assert.match(abap, /MESSAGE ID 'ZR2C' TYPE 'E' NUMBER '011' WITH p_num 'is negative' INTO lv_message\./);
   assert.match(abap, /message\( 'A status message' \)\./);
   assert.match(abap, /message\( text = gv_text\n {17}type = `W` \)\./, "S DISPLAY LIKE E is a warning");
-  assert.match(abap, /MESSAGE s013 WITH p_num INTO gv_text\./, "MESSAGE ... INTO stays");
+  assert.match(abap, /MESSAGE s013\(zr2c\) WITH p_num INTO gv_text\./, "MESSAGE ... INTO stays, with the class of MESSAGE-ID");
   assert.match(abap, /type = sy-msgty \)\./);
   const { result } = converted.get("zr2c_07_messages");
   assert.ok(result.todos.some((t) => /TEXT-001 is not in the text pool/.test(t.message)));
@@ -265,4 +269,118 @@ test("default class name", () => {
   assert.equal(defaultClassName("yreport"), "ycl_report");
   assert.equal(defaultClassName("/abc/flights"), "/abc/cl_flights");
   assert.equal(defaultClassName("zvery_long_report_name_that_goes_on"), "zcl_very_long_report_name_that");
+});
+
+// ---------------------------------------------------------------------------
+// what the runtime test (test/runtime) found - each construct on its own
+
+const classFrom = (source) => {
+  const r = convert(source, { file: "zt.prog.abap", className: "zcl_t" });
+  assert.deepEqual(r.refusals, []);
+  return { abap: r.files["zcl_t.clas.abap"], result: r };
+};
+
+test("runtime: every run starts with the global data of a fresh start - selection phase data and VALUEs kept", () => {
+  const { abap } = classFrom([
+    "REPORT zt.",
+    "DATA: gv_sum TYPE i, gv_start TYPE i VALUE 7, gt_list TYPE STANDARD TABLE OF i, gv_init TYPE string, gv_check TYPE i.",
+    "PARAMETERS p_n TYPE i DEFAULT 3.",
+    "INITIALIZATION.",
+    "  gv_init = `x`.",
+    "AT SELECTION-SCREEN.",
+    "  PERFORM check.",
+    "START-OF-SELECTION.",
+    "  gv_sum = gv_sum + p_n + gv_start + gv_check.",
+    "  WRITE / gv_sum.",
+    "FORM check.",
+    "  gv_check = 1.",
+    "ENDFORM.",
+  ].join("\n"));
+  assert.match(abap, /METHOD start_of_selection\.\n\n {4}" every run starts [^\n]*\n {4}CLEAR: gv_sum,\n {11}gt_list\.\n {4}gv_start = 7\.\n/);
+  assert.doesNotMatch(abap, /CLEAR[^.]*(gv_init|gv_check|p_n)/, "INITIALIZATION, AT SELECTION-SCREEN and the FORMs it calls keep theirs");
+  assert.match(abap, /gt_list\s+TYPE STANDARD TABLE OF i WITH DEFAULT KEY/, "the default key written out");
+});
+
+test("runtime: END-OF-SELECTION still runs after a RETURN or STOP of START-OF-SELECTION", () => {
+  const { abap } = classFrom([
+    "REPORT zt.",
+    "PARAMETERS p_n TYPE i.",
+    "START-OF-SELECTION.",
+    "  IF p_n = 0.",
+    "    RETURN.",
+    "  ENDIF.",
+    "  IF p_n = 1.",
+    "    STOP.",
+    "  ENDIF.",
+    "  WRITE / p_n.",
+    "END-OF-SELECTION.",
+    "  WRITE / 'end'.",
+  ].join("\n"));
+  assert.match(abap, /IF p_n = 0\.\n {6}end_of_selection\( \)\.\n {6}RETURN\./);
+  assert.match(abap, /IF p_n = 1\.\n {6}end_of_selection\( \)\.\n {6}RETURN\./);
+  assert.match(abap, /" END-OF-SELECTION\n {4}end_of_selection\( \)\./);
+  assert.match(abap, /METHOD end_of_selection\.\n\n {4}list\( \)->new_line\(\n {8}\)->write\( 'end' \)\./);
+  // without a RETURN it stays appended
+  const plain = classFrom("REPORT zt.\nSTART-OF-SELECTION.\n  WRITE / 'a'.\nEND-OF-SELECTION.\n  WRITE / 'b'.\n").abap;
+  assert.match(plain, /" END-OF-SELECTION\n {4}list\( \)->new_line\(/);
+  assert.doesNotMatch(plain, /end_of_selection/);
+});
+
+test("runtime: x IN range outside ABAP SQL calls range_check( ) - also in a LOOP WHERE", () => {
+  const { abap } = classFrom([
+    "REPORT zt.",
+    "TYPES: BEGIN OF ty_row, id TYPE i, name TYPE string, END OF ty_row.",
+    "DATA gt_row TYPE STANDARD TABLE OF ty_row WITH DEFAULT KEY.",
+    "SELECT-OPTIONS s_id FOR gt_row-id.",
+    "START-OF-SELECTION.",
+    "  DATA lv_ok TYPE abap_bool.",
+    "  IF 5 NOT IN s_id OR 6 IN s_id.",
+    "    lv_ok = xsdbool( 7 IN s_id ).",
+    "  ENDIF.",
+    "  LOOP AT gt_row ASSIGNING FIELD-SYMBOL(<ls_row>) WHERE id IN s_id AND name <> `x`.",
+    "    WRITE / <ls_row>-name.",
+    "  ENDLOOP.",
+    "  SELECT * FROM scarr INTO TABLE @DATA(lt_scarr) WHERE carrid IN @s_id.",
+  ].join("\n"));
+  assert.match(abap, /IF z2ui5_cl_cgui_context=>range_check\( val = 5 range = s_id \) = abap_false OR z2ui5_cl_cgui_context=>range_check\( val = 6 range = s_id \) = abap_true\./);
+  assert.match(abap, /xsdbool\( z2ui5_cl_cgui_context=>range_check\( val = 7 range = s_id \) = abap_true \)/);
+  assert.match(abap, /LOOP AT gt_row ASSIGNING FIELD-SYMBOL\(<ls_row>\)\.\n {6}IF NOT \( z2ui5_cl_cgui_context=>range_check\( val = <ls_row>-id range = s_id \) = abap_true AND <ls_row>-name <> `x` \)\.\n {8}CONTINUE\.\n {6}ENDIF\./);
+  assert.match(abap, /WHERE carrid IN @s_id/, "ABAP SQL keeps its IN");
+});
+
+test("runtime: a generic TYPE p FORM parameter is typed LIKE what every PERFORM passes", () => {
+  const { abap, result } = classFrom([
+    "REPORT zt.",
+    "DATA: gv_a TYPE p LENGTH 8 DECIMALS 2, gv_b TYPE p LENGTH 8 DECIMALS 2.",
+    "START-OF-SELECTION.",
+    "  PERFORM calc USING gv_a CHANGING gv_b.",
+    "  PERFORM calc USING gv_b CHANGING gv_b.",
+    "  WRITE / gv_b.",
+    "FORM calc USING iv_in TYPE p CHANGING cv_out TYPE p.",
+    "  cv_out = iv_in * 2.",
+    "ENDFORM.",
+  ].join("\n"));
+  assert.match(abap, /iv_in TYPE p\n/, "two different actuals: stays generic");
+  assert.match(abap, /cv_out LIKE gv_b\./);
+  assert.ok(result.todos.some((t) => /iv_in is the generic TYPE p/.test(t.message)));
+});
+
+test("runtime: sy-repid is the name of the report; MESSAGE ... INTO names the class of MESSAGE-ID", () => {
+  const { abap, result } = classFrom([
+    "REPORT zt MESSAGE-ID zmsg.",
+    "DATA gv_text TYPE string.",
+    "START-OF-SELECTION.",
+    "  gv_text = sy-repid.",
+    "  MESSAGE e042 WITH gv_text INTO gv_text.",
+    "  WRITE / gv_text.",
+  ].join("\n"));
+  assert.match(abap, /gv_text = 'ZT'\./);
+  assert.match(abap, /MESSAGE e042\(zmsg\) WITH gv_text INTO gv_text\./);
+  assert.ok(result.release.some((r) => r.kind === "message class" && r.name === "ZMSG"));
+});
+
+test("runtime: TOP-OF-PAGE is the top_of_page( ) event, not a call at the start", () => {
+  const { abap } = classFrom("REPORT zt.\nTOP-OF-PAGE.\n  WRITE / 'Header'.\nSTART-OF-SELECTION.\n  WRITE / 'a'.\n");
+  assert.match(abap, /PROTECTED SECTION\.[\s\S]*METHODS top_of_page REDEFINITION\./);
+  assert.doesNotMatch(abap, /top_of_page\( \)\./);
 });

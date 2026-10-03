@@ -109,6 +109,11 @@ CLASS z2ui5_cl_cgui_report DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
 
     METHODS start_of_selection.
 
+    "! TOP-OF-PAGE - runs when the list of a run gets its first line, before
+    "! that line: write the page header here. A list that only the header
+    "! would fill is no list - the classic event fired at the first WRITE
+    METHODS top_of_page.
+
     "! row is the line number of the list or the row index of the ALV table,
     "! hide the value the list hotspot was written with
     METHODS at_line_selection
@@ -422,6 +427,9 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD start_of_selection ##NEEDED.
+  ENDMETHOD.
+
+  METHOD top_of_page ##NEEDED.
   ENDMETHOD.
 
   METHOD at_line_selection ##NEEDED.
@@ -1111,6 +1119,8 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
 
     IF mo_cgui_list IS NOT BOUND.
       mo_cgui_list = z2ui5_cl_cgui_list=>factory( ).
+      " the header comes first - its own writes find the list bound
+      top_of_page( ).
     ENDIF.
     result = mo_cgui_list.
 

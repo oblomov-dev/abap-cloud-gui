@@ -7,7 +7,7 @@ CLASS z2ui5_cl_cgui_r2c_04 DEFINITION PUBLIC
     " global data of the report
     DATA:
       gs_spfli   TYPE spfli,
-      gt_spfli   TYPE STANDARD TABLE OF spfli.
+      gt_spfli   TYPE STANDARD TABLE OF spfli WITH DEFAULT KEY.
 
     " selection screen
     DATA s_carrid LIKE RANGE OF gs_spfli-carrid.
@@ -45,6 +45,10 @@ CLASS z2ui5_cl_cgui_r2c_04 IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD start_of_selection.
+
+    " every run starts with the global data of a fresh start - the classic report restarted after its list
+    CLEAR: gs_spfli,
+           gt_spfli.
 
     select_data( ).
     display( ).

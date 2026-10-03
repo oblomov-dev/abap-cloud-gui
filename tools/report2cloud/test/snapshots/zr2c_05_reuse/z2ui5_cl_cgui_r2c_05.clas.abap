@@ -7,7 +7,7 @@ CLASS z2ui5_cl_cgui_r2c_05 DEFINITION PUBLIC
     " global data of the report
     DATA scarr TYPE scarr.
     DATA:
-      gt_scarr    TYPE STANDARD TABLE OF scarr,
+      gt_scarr    TYPE STANDARD TABLE OF scarr WITH DEFAULT KEY,
       gs_scarr    TYPE scarr.
 
     " selection screen
@@ -31,6 +31,11 @@ CLASS z2ui5_cl_cgui_r2c_05 IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD start_of_selection.
+
+    " every run starts with the global data of a fresh start - the classic report restarted after its list
+    CLEAR: scarr,
+           gt_scarr,
+           gs_scarr.
 
     IF p_curr IS INITIAL.
       SELECT * FROM scarr INTO TABLE @gt_scarr.

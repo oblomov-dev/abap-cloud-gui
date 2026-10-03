@@ -5,13 +5,16 @@
 | Source | `zr2c_03_forms.prog.abap` |
 | Text pool | none - texts are placeholders, see the TODOs |
 | Result | **converted** - `z2ui5_cl_cgui_r2c_03.clas.abap`, `z2ui5_cl_cgui_r2c_03.clas.xml` |
-| Mapped | 25 construct(s) |
-| TODO | 1 |
+| Mapped | 28 construct(s) |
+| TODO | 4 |
 | Release state to check | 0 object(s) |
 
 ## TODO
 
 - no selection text in the text pool for P_ITEMS, P_DISC, P_VAT - the label is the DDIC label of the type or the field name; pass the .prog.xml (--texts) or set text = in selection_screen( )
+- `zr2c_03_forms.prog.abap:62:1` - FORM total: the generic parameter iv_discount TYPE p is typed LIKE p_disc, the data object every PERFORM passes - the transpiled runtime has no generic packed type
+- `zr2c_03_forms.prog.abap:62:1` - FORM total: the generic parameter cv_net TYPE p is typed LIKE gv_net, the data object every PERFORM passes - the transpiled runtime has no generic packed type
+- `zr2c_03_forms.prog.abap:72:3` - LOOP AT ... WHERE with IN on a range became a CONTINUE at the top of the loop - sy-subrc after ENDLOOP is 0 when the table has lines, also when none matched
 
 ## Release state on ABAP Cloud
 
@@ -22,6 +25,7 @@ The class uses no database table, DDIC type, function module, class or message c
 | Line | Classic | abap-cloud-gui |
 |---|---|---|
 | 7 | `REPORT zr2c_03_forms` | the class, `INHERITING FROM z2ui5_cl_cgui_report` |
+| 19 | `global data - the report restarted after its list` | `CLEAR` of 4 global data object(s) at the start of `start_of_selection( )` |
 | 24 | `PARAMETERS p_items TYPE i DEFAULT 5 OBLIGATORY` | attribute `p_items`, `screen->parameter( )` |
 | 25 | `PARAMETERS p_disc TYPE p LENGTH 3 DECIMALS 2 DEFAULT '0.05'` | attribute `p_disc`, `screen->parameter( )` |
 | 26 | `PARAMETERS p_vat AS CHECKBOX DEFAULT 'X'` | attribute `p_vat`, `screen->checkbox( )` |
@@ -34,6 +38,8 @@ The class uses no database table, DDIC type, function module, class or message c
 | 46 | `FORM build_items USING VALUE(iv_count) TYPE i CHANGING ct_items TYP...` | private method `build_items( )` |
 | 62 | `FORM total TABLES it_items STRUCTURE gs_template USING iv_discount ...` | private method `total( )` |
 | 67 | `RANGES lr_big FOR ls_item-quantity` | `DATA ... RANGE OF` |
+| 72 | `LOOP AT it_items INTO ls_item WHERE pos IN lr_pos` | `LOOP AT ...` and the WHERE as `IF ... CONTINUE. ENDIF.` at the top of the loop - `range_check( )` for the IN |
+| 73 | `IF ls_item-quantity IN lr_big` | `z2ui5_cl_cgui_context=>range_check( val range )` - IN outside ABAP SQL |
 | 84 | `FORM output` | private method `output( )` |
 | 87 | `PERFORM write_item USING ls_item` | `write_item( )` |
 | 89 | `ULINE` | `list( )->uline( )` |

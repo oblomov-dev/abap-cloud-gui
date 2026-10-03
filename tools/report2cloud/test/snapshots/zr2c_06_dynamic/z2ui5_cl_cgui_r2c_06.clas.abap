@@ -53,7 +53,7 @@ CLASS z2ui5_cl_cgui_r2c_06 IMPLEMENTATION.
     p_unit = 'PC'.
 
     b_reset = 'Reset'.
-    p_source = sy-repid.
+    p_source = 'ZR2C_06_DYNAMIC'.
     gt_plant = VALUE #( ( werks = '1000' name = 'Hamburg' )
                         ( werks = '2000' name = 'Walldorf' )
                         ( werks = '3000' name = 'Berlin' ) ).

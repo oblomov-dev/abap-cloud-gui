@@ -5,7 +5,7 @@
 | Source | `zr2c_11_legacy.prog.abap` |
 | Text pool | none - texts are placeholders, see the TODOs |
 | Result | **converted** - `z2ui5_cl_cgui_r2c_11.clas.abap`, `z2ui5_cl_cgui_r2c_11.clas.xml` |
-| Mapped | 14 construct(s) |
+| Mapped | 16 construct(s) |
 | TODO | 4 |
 | Release state to check | 0 object(s) |
 
@@ -31,11 +31,13 @@ Layout, formatting and behaviour of the classic report that the list, the ALV or
 | Line | Classic | abap-cloud-gui |
 |---|---|---|
 | 8 | `REPORT zr2c_11_legacy` | the class, `INHERITING FROM z2ui5_cl_cgui_report` |
+| 10 | `global data - the report restarted after its list` | `CLEAR` of 4 global data object(s) at the start of `start_of_selection( )` |
 | 15 | `FIELD-SYMBOLS <gv_number> TYPE i` | declared in each method that uses it |
 | 17 | `SELECT-OPTIONS s_range FOR gv_sum DEFAULT 1 TO 20` | range attribute `s_range`, `screen->select_option( )` |
 | 18 | `PARAMETERS p_title TYPE c LENGTH 30 DEFAULT 'Numbers'` | attribute `p_title`, `screen->parameter( )` |
 | 20 | `START-OF-SELECTION` | `start_of_selection( )` |
 | 21 | `SET PF-STATUS 'LIST'` | dropped - SET PF-STATUS |
+| 23 | `IF sy-index IN s_range` | `z2ui5_cl_cgui_context=>range_check( val range )` - IN outside ABAP SQL |
 | 28 | `WRITE p_title TO gv_text` | string template |
 | 29 | `WRITE / gv_text COLOR COL_HEADING` | `write( )`, color |
 | 32 | `WRITE / <gv_number>` | `write( )` |
