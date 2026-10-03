@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { convert, defaultClassName } from "../lib/convert.mjs";
+import { convert, defaultClassName, RESERVED_METHODS } from "../lib/convert.mjs";
 import { corpus, convertEntry, SNAPSHOTS } from "./corpus.mjs";
 
 const UPDATE = process.env.UPDATE_SNAPSHOTS === "1";
@@ -100,9 +100,11 @@ test("TOP-OF-PAGE, END-OF-SELECTION, HIDE and AT LINE-SELECTION", () => {
   const abap = classOf("zr2c_02_flights");
   assert.match(abap, /METHOD start_of_selection\.\n\n {4}" every run starts [^\n]*\n {4}CLEAR: gt_flight,\n {11}gs_flight,\n {11}gv_total\.\n\n {4}SELECT /);
   assert.match(abap, /METHODS top_of_page REDEFINITION\./);
-  // START-OF-SELECTION has a RETURN, after which the classic END-OF-SELECTION still ran
-  assert.match(abap, /message\( lv_message \)\.\n {6}end_of_selection\( \)\.\n {6}RETURN\./);
-  assert.match(abap, /" END-OF-SELECTION\n {4}end_of_selection\( \)\.\n\n {2}ENDMETHOD\./);
+  // END-OF-SELECTION is the event of the runtime, which runs it after the
+  // RETURN of START-OF-SELECTION as well
+  assert.match(abap, /PROTECTED SECTION\.[\s\S]*METHODS end_of_selection REDEFINITION\.[\s\S]*PRIVATE SECTION/);
+  assert.match(abap, /message\( lv_message \)\.\n {6}RETURN\./);
+  assert.doesNotMatch(abap, /end_of_selection\( \)/);
   assert.match(abap, /METHOD end_of_selection\.\n\n {4}list\( \)->skip\( \)\./);
   assert.match(abap, /hide {4}= \|\{ gs_flight-carrid \}\\t\{ gs_flight-connid \}\\t\{ gs_flight-fldate \}\|/);
   assert.match(abap, /SPLIT hide AT \|\\t\| INTO TABLE DATA\(lt_hide\)\.\n {4}gs_flight-carrid = VALUE #\( lt_hide\[ 1 \] OPTIONAL \)\./);
@@ -316,14 +318,17 @@ test("runtime: END-OF-SELECTION still runs after a RETURN or STOP of START-OF-SE
     "END-OF-SELECTION.",
     "  WRITE / 'end'.",
   ].join("\n"));
-  assert.match(abap, /IF p_n = 0\.\n {6}end_of_selection\( \)\.\n {6}RETURN\./);
-  assert.match(abap, /IF p_n = 1\.\n {6}end_of_selection\( \)\.\n {6}RETURN\./);
-  assert.match(abap, /" END-OF-SELECTION\n {4}end_of_selection\( \)\./);
+  // the runtime runs end_of_selection( ) after start_of_selection( ) - a
+  // RETURN or STOP is a RETURN, nobody calls the event itself
+  assert.match(abap, /IF p_n = 0\.\n {6}RETURN\./);
+  assert.match(abap, /IF p_n = 1\.\n {6}RETURN\./);
+  assert.match(abap, /METHODS end_of_selection REDEFINITION\./);
+  assert.doesNotMatch(abap, /end_of_selection\( \)/);
   assert.match(abap, /METHOD end_of_selection\.\n\n {4}list\( \)->new_line\(\n {8}\)->write\( 'end' \)\./);
-  // without a RETURN it stays appended
+  // without a RETURN as well - END-OF-SELECTION is never appended
   const plain = classFrom("REPORT zt.\nSTART-OF-SELECTION.\n  WRITE / 'a'.\nEND-OF-SELECTION.\n  WRITE / 'b'.\n").abap;
-  assert.match(plain, /" END-OF-SELECTION\n {4}list\( \)->new_line\(/);
-  assert.doesNotMatch(plain, /end_of_selection/);
+  assert.match(plain, /METHOD end_of_selection\.\n\n {4}list\( \)->new_line\(/);
+  assert.doesNotMatch(plain, /" END-OF-SELECTION/);
 });
 
 test("runtime: x IN range outside ABAP SQL calls range_check( ) - also in a LOOP WHERE", () => {
@@ -380,7 +385,109 @@ test("runtime: sy-repid is the name of the report; MESSAGE ... INTO names the cl
 });
 
 test("runtime: TOP-OF-PAGE is the top_of_page( ) event, not a call at the start", () => {
-  const { abap } = classFrom("REPORT zt.\nTOP-OF-PAGE.\n  WRITE / 'Header'.\nSTART-OF-SELECTION.\n  WRITE / 'a'.\n");
+  const { abap } = classFrom("REPORT zt.\nTOP-OF-PAGE.\n  WRITE / 'Header'.\nSTART-OF-SELECTION.\n  WRITE / 'a'.\n  NEW-PAGE.\n  WRITE / 'b'.\n");
   assert.match(abap, /PROTECTED SECTION\.[\s\S]*METHODS top_of_page REDEFINITION\./);
+  // the runtime repeats the header on the new page - no call after NEW-PAGE
+  assert.match(abap, /list\( \)->new_page\( \)\./);
   assert.doesNotMatch(abap, /top_of_page\( \)\./);
+});
+
+// ---------------------------------------------------------------------------
+// the events of z2ui5_cl_cgui_report the converter maps since the runtime has
+// them - and the names the generated class must not take
+
+test("the reserved names are the PUBLIC and PROTECTED methods of z2ui5_cl_cgui_report", () => {
+  const src = readFileSync(join(import.meta.dirname, "..", "..", "..", "src", "01", "z2ui5_cl_cgui_report.clas.abap"), "utf8");
+  const def = src.slice(0, src.indexOf("PRIVATE SECTION"));
+  const methods = [...def.matchAll(/^\s*METHODS ([a-z0-9_]+)/gm)].map((m) => m[1]);
+  const missing = methods.filter((m) => !RESERVED_METHODS.has(m));
+  assert.deepEqual(missing, [], "add them to BASE_METHODS in lib/convert.mjs");
+});
+
+test("refused: a global of the report named like a method of the runtime", () => {
+  assert.match(refusalOf("REPORT zt.\nDATA tree TYPE i.\nSTART-OF-SELECTION.\n  WRITE tree.\n")[0], /^2:1 TREE is the name of a component of z2ui5_cl_cgui_report/);
+});
+
+test("AT SELECTION-SCREEN ON BLOCK, ON RADIOBUTTON GROUP, ON END OF, ON EXIT-COMMAND", () => {
+  const { abap, result } = classFrom([
+    "REPORT zt.",
+    "SELECTION-SCREEN BEGIN OF BLOCK b1.",
+    "PARAMETERS p_a TYPE i.",
+    "SELECT-OPTIONS s_d FOR sy-datum.",
+    "SELECTION-SCREEN END OF BLOCK b1.",
+    "PARAMETERS: p_x RADIOBUTTON GROUP grp DEFAULT 'X',",
+    "            p_y RADIOBUTTON GROUP grp.",
+    "AT SELECTION-SCREEN ON BLOCK b1.",
+    "  IF p_a < 0.",
+    "    MESSAGE 'Negative' TYPE 'E'.",
+    "  ENDIF.",
+    "AT SELECTION-SCREEN ON RADIOBUTTON GROUP grp.",
+    "  IF p_y = abap_true AND p_a = 0.",
+    "    MESSAGE 'Not with 0' TYPE 'E'.",
+    "  ENDIF.",
+    "AT SELECTION-SCREEN ON END OF s_d.",
+    "  IF lines( s_d ) > 3.",
+    "    MESSAGE 'At most 3' TYPE 'E'.",
+    "  ENDIF.",
+    "AT SELECTION-SCREEN ON EXIT-COMMAND.",
+    "  CLEAR p_a.",
+    "START-OF-SELECTION.",
+    "  WRITE p_a.",
+  ].join("\n"));
+  assert.match(abap, /screen->block_begin\( name = `B1`/);
+  for (const m of ["at_selection_screen_on_block", "at_selection_screen_on_radio", "at_selection_screen_on_end_of", "at_selection_screen_on_exit"]) {
+    assert.match(abap, new RegExp(`METHODS ${m} REDEFINITION\\.`));
+  }
+  assert.match(abap, /METHOD at_selection_screen_on_block\.\n\n {4}CASE block\.\n {6}WHEN `B1`\./);
+  assert.match(abap, /METHOD at_selection_screen_on_radio\.\n\n {4}CASE group\.\n {6}WHEN `GRP`\./);
+  assert.match(abap, /METHOD at_selection_screen_on_end_of\.\n\n {4}CASE field\.\n {6}WHEN `S_D`\./);
+  assert.match(abap, /METHOD at_selection_screen_on_exit\.\n\n {4}CLEAR p_a\./);
+  assert.equal(result.todos.filter((t) => /ON BLOCK|EXIT-COMMAND/.test(t.message)).length, 0);
+});
+
+test("refused: AT SELECTION-SCREEN ON HELP-REQUEST, ON BLOCK of no block", () => {
+  const r = refusalOf("REPORT zt.\nPARAMETERS p TYPE i.\nAT SELECTION-SCREEN ON HELP-REQUEST FOR p.\n  CLEAR p.\nAT SELECTION-SCREEN ON BLOCK b9.\n  CLEAR p.\n");
+  assert.match(r[0], /^3:1 AT SELECTION-SCREEN ON HELP-REQUEST - at_selection_screen_on_help\( \) runs from the F1 button/);
+  assert.match(r[1], /^5:1 ON BLOCK B9 - no SELECTION-SCREEN BEGIN OF BLOCK B9/);
+});
+
+test("TOP-OF-PAGE DURING LINE-SELECTION is top_of_page_line_selection( ); sy-pagno in a header is &PAGE&", () => {
+  const { abap } = classFrom([
+    "REPORT zt.",
+    "TOP-OF-PAGE.",
+    "  WRITE: / 'Page', sy-pagno.",
+    "TOP-OF-PAGE DURING LINE-SELECTION.",
+    "  WRITE / 'Detail'.",
+    "START-OF-SELECTION.",
+    "  WRITE / 'a' HOTSPOT.",
+    "AT LINE-SELECTION.",
+    "  WRITE / sy-lisel.",
+  ].join("\n"));
+  assert.match(abap, /METHODS top_of_page REDEFINITION\.\n {4}METHODS top_of_page_line_selection REDEFINITION\./);
+  assert.match(abap, /METHOD top_of_page\.[\s\S]*z2ui5_cl_cgui_list=>cv_page[\s\S]*ENDMETHOD\./);
+  assert.match(abap, /METHOD top_of_page_line_selection\.\n\n {4}list\( \)->new_line\(\n {8}\)->write\( 'Detail' \)\./);
+  assert.match(abap, /lisel\( \)/);
+});
+
+test("REPORT LINE-COUNT n(m) and END-OF-PAGE; NEW-PAGE NO-HEADING LINE-COUNT", () => {
+  const source = (head) => [
+    `REPORT zt ${head}.`,
+    "END-OF-PAGE.",
+    "  ULINE.",
+    "  WRITE / 'Footer'.",
+    "START-OF-SELECTION.",
+    "  WRITE / 'a'.",
+    "  NEW-PAGE NO-HEADING LINE-COUNT 30.",
+    "  WRITE / 'b'.",
+  ].join("\n");
+  const { abap, result } = classFrom(source("LINE-COUNT 20(2)"));
+  assert.match(abap, /set_line_count\( 20 \)\./);
+  assert.match(abap, /METHODS end_of_page REDEFINITION\./);
+  assert.match(abap, /METHOD end_of_page\.\n\n {4}list\( \)->uline\( \)\./);
+  assert.match(abap, /list\( \)->new_page\( no_heading = abap_true\n {23}line_count = 30 \)\./);
+  assert.ok(result.todos.some((t) => /END-OF-PAGE: the runtime ends every page/.test(t.message)));
+  // without footer lines the classic END-OF-PAGE never ran
+  const none = classFrom(source("LINE-COUNT 20"));
+  assert.doesNotMatch(none.abap, /end_of_page/);
+  assert.ok(none.result.todos.some((t) => /END-OF-PAGE dropped/.test(t.message)));
 });

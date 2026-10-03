@@ -11,6 +11,12 @@
 "!   ENDLOOP.
 "! A hotspot raises cs_event-line_selection with the line number as first
 "! and the HIDE value as second event argument - AT LINE-SELECTION.
+"! write( input = abap_true ) and write_as_checkbox( input = abap_true ) are
+"! input fields: get_inputs( ) / set_inputs( ) carry their values through a
+"! table the app binds, read_value( ) and modify_line( ) are READ LINE and
+"! MODIFY LINE. footer_begin( ) / footer_end( ) frame END-OF-PAGE, shown at
+"! the end of every page; set_line_count( ) is LINE-COUNT - a new page after
+"! so many lines. &PAGE& in a header or footer is the page number.
 CLASS z2ui5_cl_cgui_list DEFINITION PUBLIC FINAL CREATE PUBLIC.
 
   PUBLIC SECTION.
@@ -21,8 +27,8 @@ CLASS z2ui5_cl_cgui_list DEFINITION PUBLIC FINAL CREATE PUBLIC.
         line_selection TYPE string VALUE `CGUI_LINE_SELECTION`,
       END OF cs_event.
 
+    "! the colors of FORMAT COLOR, as UI5 value states
     CONSTANTS:
-      "! the colors of FORMAT COLOR, as UI5 value states
       BEGIN OF cs_color,
         none     TYPE string VALUE ``,
         positive TYPE string VALUE `Success`,
@@ -31,17 +37,75 @@ CLASS z2ui5_cl_cgui_list DEFINITION PUBLIC FINAL CREATE PUBLIC.
         key      TYPE string VALUE `Information`,
       END OF cs_color.
 
+    CONSTANTS:
+      BEGIN OF cs_justify,
+        left   TYPE string VALUE `LEFT`,
+        right  TYPE string VALUE `RIGHT`,
+        center TYPE string VALUE `CENTER`,
+      END OF cs_justify.
+
+    "! the page number in a header or footer
+    CONSTANTS cv_page TYPE string VALUE `&PAGE&`.
+
+    "! the date formats of WRITE ... DD/MM/YYYY etc. - as the classic
+    "! additions: day and month in the order of the user's date format, the
+    "! year with 2 or 4 digits, DDMMYY / MMDDYY without separators
+    CONSTANTS:
+      BEGIN OF cs_date_format,
+        dd_mm_yy   TYPE string VALUE `DD/MM/YY`,
+        mm_dd_yy   TYPE string VALUE `MM/DD/YY`,
+        dd_mm_yyyy TYPE string VALUE `DD/MM/YYYY`,
+        mm_dd_yyyy TYPE string VALUE `MM/DD/YYYY`,
+        ddmmyy     TYPE string VALUE `DDMMYY`,
+        mmddyy     TYPE string VALUE `MMDDYY`,
+        yymmdd     TYPE string VALUE `YYMMDD`,
+      END OF cs_date_format.
+
+    "! FORMAT - what WRITE takes when it is not told otherwise
+    TYPES:
+      BEGIN OF ty_s_format,
+        color       TYPE string,
+        intensified TYPE abap_bool,
+        inverse     TYPE abap_bool,
+        hotspot     TYPE abap_bool,
+        input       TYPE abap_bool,
+      END OF ty_s_format.
+
     TYPES:
       BEGIN OF ty_s_item,
-        line    TYPE i,
-        kind    TYPE string,
-        text    TYPE string,
-        flag    TYPE abap_bool,
-        color   TYPE string,
-        hotspot TYPE abap_bool,
-        hide    TYPE string,
+        line        TYPE i,
+        kind        TYPE string,
+        text        TYPE string,
+        flag        TYPE abap_bool,
+        color       TYPE string,
+        hotspot     TYPE abap_bool,
+        hide        TYPE string,
+        pos         TYPE i,
+        len         TYPE i,
+        header      TYPE abap_bool,
+        footer      TYPE abap_bool,
+        intensified TYPE abap_bool,
+        inverse     TYPE abap_bool,
+        justify     TYPE string,
+        input       TYPE abap_bool,
+        id          TYPE i,
+        no_gap      TYPE abap_bool,
+        quickinfo   TYPE string,
+        name        TYPE string,
+        col         TYPE i,
+        no_heading  TYPE abap_bool,
       END OF ty_s_item.
     TYPES ty_t_item TYPE STANDARD TABLE OF ty_s_item WITH EMPTY KEY.
+
+    "! the value of an input field of the list - bound by the app
+    TYPES:
+      BEGIN OF ty_s_input,
+        id    TYPE i,
+        line  TYPE i,
+        value TYPE string,
+        flag  TYPE abap_bool,
+      END OF ty_s_input.
+    TYPES ty_t_input TYPE STANDARD TABLE OF ty_s_input WITH EMPTY KEY.
 
     CLASS-METHODS factory
       RETURNING
@@ -49,20 +113,204 @@ CLASS z2ui5_cl_cgui_list DEFINITION PUBLIC FINAL CREATE PUBLIC.
 
     "! WRITE val - dates and times in the user's format. val and hide are
     "! passed by value: `hide = sy-tabix` must keep the row it was written
-    "! in, not whatever a later LOOP left in sy-tabix
+    "! in, not whatever a later LOOP left in sy-tabix. pos and len are
+    "! WRITE AT pos(len): the column (1-based) the value starts in and the
+    "! characters it takes - columns line up over the lines of the list.
+    "! The options of WRITE and FORMAT: intensified, inverse, no_zero,
+    "! no_sign, currency (the decimals of the currency), unit, decimals,
+    "! justify (cs_justify, within len) and input (INPUT ON)
     METHODS write
       IMPORTING
         VALUE(val)    TYPE any
         color         TYPE clike     DEFAULT cs_color-none
         hotspot       TYPE abap_bool DEFAULT abap_false
         VALUE(hide)   TYPE any       OPTIONAL
+        pos           TYPE i         DEFAULT 0
+        len           TYPE i         DEFAULT 0
+        intensified   TYPE abap_bool DEFAULT abap_false
+        inverse       TYPE abap_bool DEFAULT abap_false
+        no_zero       TYPE abap_bool DEFAULT abap_false
+        no_sign       TYPE abap_bool DEFAULT abap_false
+        currency      TYPE clike     OPTIONAL
+        unit          TYPE clike     OPTIONAL
+        decimals      TYPE i         DEFAULT -1
+        justify       TYPE clike     OPTIONAL
+        input         TYPE abap_bool DEFAULT abap_false
+        no_gap        TYPE abap_bool DEFAULT abap_false
+        edit_mask     TYPE clike     OPTIONAL
+        no_grouping   TYPE abap_bool DEFAULT abap_false
+        round         TYPE i         DEFAULT 0
+        date_format   TYPE clike     OPTIONAL
+        time_zone     TYPE clike     OPTIONAL
+        quickinfo     TYPE clike     OPTIONAL
+        name          TYPE clike     OPTIONAL
+        under         TYPE clike     OPTIONAL
       RETURNING
         VALUE(result) TYPE REF TO z2ui5_cl_cgui_list.
 
-    "! WRITE val AS CHECKBOX
+    "! FORMAT COLOR / INTENSIFIED / INVERSE / HOTSPOT / INPUT - the defaults
+    "! of the WRITEs that follow; what is not passed stays. reset is FORMAT
+    "! RESET
+    METHODS format
+      IMPORTING
+        color         TYPE clike     OPTIONAL
+        intensified   TYPE abap_bool OPTIONAL
+        inverse       TYPE abap_bool OPTIONAL
+        hotspot       TYPE abap_bool OPTIONAL
+        input         TYPE abap_bool OPTIONAL
+        reset         TYPE abap_bool DEFAULT abap_false
+      RETURNING
+        VALUE(result) TYPE REF TO z2ui5_cl_cgui_list.
+
+    METHODS get_format
+      RETURNING
+        VALUE(result) TYPE ty_s_format.
+
+    "! POSITION col - the next WRITE starts at column col
+    METHODS position
+      IMPORTING
+        col           TYPE i
+      RETURNING
+        VALUE(result) TYPE REF TO z2ui5_cl_cgui_list.
+
+    "! RESERVE n LINES - a new page when fewer lines are left on this one
+    "! (with LINE-COUNT)
+    METHODS reserve
+      IMPORTING
+        lines         TYPE i
+      RETURNING
+        VALUE(result) TYPE REF TO z2ui5_cl_cgui_list.
+
+    "! SKIP TO LINE n - empty lines up to line n of the page
+    METHODS skip_to_line
+      IMPORTING
+        line          TYPE i
+      RETURNING
+        VALUE(result) TYPE REF TO z2ui5_cl_cgui_list.
+
+    "! LINE-SIZE - the width of a ULINE and of the printout lines
+    METHODS set_line_size
+      IMPORTING
+        val TYPE i.
+
+    METHODS get_line_size
+      RETURNING
+        VALUE(result) TYPE i.
+
+    "! SY-LINNO - the line written to now
+    METHODS current_line
+      RETURNING
+        VALUE(result) TYPE i.
+
+    "! SY-COLNO - the column the next WRITE starts at
+    METHODS current_column
+      RETURNING
+        VALUE(result) TYPE i.
+
+    "! SY-PAGNO - the page written to now
+    METHODS current_page
+      RETURNING
+        VALUE(result) TYPE i.
+
+    "! DESCRIBE LIST NUMBER OF LINES - the lines of the list
+    METHODS describe_lines
+      RETURNING
+        VALUE(result) TYPE i.
+
+    "! SY-LISEL - line as text, as it prints
+    METHODS line_text
+      IMPORTING
+        line          TYPE i
+      RETURNING
+        VALUE(result) TYPE string.
+
+    "! the item with id - the one clicked: GET CURSOR FIELD
+    METHODS get_item_by_id
+      IMPORTING
+        id            TYPE i
+      RETURNING
+        VALUE(result) TYPE ty_s_item.
+
+    "! END-OF-PAGE: what is written up to footer_end( ) is the page footer,
+    "! shown at the end of every page
+    METHODS footer_begin.
+
+    METHODS footer_end.
+
+    "! LINE-COUNT - a new page after val lines of the list, 0 for none
+    METHODS set_line_count
+      IMPORTING
+        val TYPE i.
+
+    "! the number of pages of the list
+    METHODS get_page_count
+      RETURNING
+        VALUE(result) TYPE i.
+
+    "! the values of the input fields, for the app to bind
+    METHODS get_inputs
+      RETURNING
+        VALUE(result) TYPE ty_t_input.
+
+    "! take over what the user entered into the input fields
+    METHODS set_inputs
+      IMPORTING
+        val TYPE ty_t_input.
+
+    "! READ LINE line FIELD VALUE - the value of the index-th field of the
+    "! line, `X` or empty for a checkbox
+    METHODS read_value
+      IMPORTING
+        line          TYPE i
+        index         TYPE i DEFAULT 1
+      RETURNING
+        VALUE(result) TYPE string.
+
+    "! the fields of a line - READ LINE
+    METHODS read_line
+      IMPORTING
+        line          TYPE i
+      RETURNING
+        VALUE(result) TYPE ty_t_item.
+
+    "! MODIFY LINE line FIELD VALUE - the value of the index-th field of the
+    "! line, and its color when passed
+    METHODS modify_line
+      IMPORTING
+        line  TYPE i
+        index TYPE i     DEFAULT 1
+        value TYPE any
+        color TYPE clike OPTIONAL.
+
+    "! TOP-OF-PAGE: what is written up to header_end( ) is the page header,
+    "! shown above the list and again after every NEW-PAGE
+    METHODS header_begin.
+
+    METHODS header_end.
+
+    "! does the list hold more than its page header
+    METHODS has_content
+      RETURNING
+        VALUE(result) TYPE abap_bool.
+
+    "! the list as plain text lines - the spool output of a background run
+    METHODS to_text
+      RETURNING
+        VALUE(result) TYPE string_table.
+
+    "! HIDE val - the value travels with the current line: every text of the
+    "! line is a hotspot raising cs_event-line_selection with val as hide
+    METHODS hide
+      IMPORTING
+        VALUE(val)    TYPE any
+      RETURNING
+        VALUE(result) TYPE REF TO z2ui5_cl_cgui_list.
+
+    "! WRITE val AS CHECKBOX - with input the user can change it
     METHODS write_as_checkbox
       IMPORTING
         val           TYPE abap_bool
+        input         TYPE abap_bool DEFAULT abap_false
       RETURNING
         VALUE(result) TYPE REF TO z2ui5_cl_cgui_list.
 
@@ -83,13 +331,22 @@ CLASS z2ui5_cl_cgui_list DEFINITION PUBLIC FINAL CREATE PUBLIC.
       RETURNING
         VALUE(result) TYPE REF TO z2ui5_cl_cgui_list.
 
+    "! ULINE - ULINE AT pos(len) with pos and len
     METHODS uline
+      IMPORTING
+        pos           TYPE i DEFAULT 0
+        len           TYPE i DEFAULT 0
       RETURNING
         VALUE(result) TYPE REF TO z2ui5_cl_cgui_list.
 
+    "! NEW-PAGE - with title, NO-HEADING (no TOP-OF-PAGE on the new page)
+    "! and LINE-COUNT for the pages from here on
     METHODS new_page
       IMPORTING
-        title         TYPE clike OPTIONAL
+        title         TYPE clike     OPTIONAL
+        no_heading    TYPE abap_bool DEFAULT abap_false
+        line_count    TYPE i         OPTIONAL
+          PREFERRED PARAMETER title
       RETURNING
         VALUE(result) TYPE REF TO z2ui5_cl_cgui_list.
 
@@ -109,11 +366,13 @@ CLASS z2ui5_cl_cgui_list DEFINITION PUBLIC FINAL CREATE PUBLIC.
         VALUE(result) TYPE ty_s_item.
 
     "! append the list to node, a container of an existing view whose
-    "! default namespace is sap.m
+    "! default namespace is sap.m. inputs - the table of get_inputs( ) the
+    "! input fields are bound to, a PUBLIC attribute of the app
     METHODS render
       IMPORTING
         node   TYPE REF TO z2ui5_cl_ui5_view_builder
-        client TYPE REF TO z2ui5_if_client.
+        client TYPE REF TO z2ui5_if_client
+        inputs TYPE ty_t_input OPTIONAL.
 
     "! the list as a complete view
     METHODS stringify
@@ -128,6 +387,17 @@ CLASS z2ui5_cl_cgui_list DEFINITION PUBLIC FINAL CREATE PUBLIC.
     " transpiled runtime reaches PROTECTED attributes but not PRIVATE ones
     DATA mt_item TYPE ty_t_item.
     DATA mv_line TYPE i VALUE 1.
+    DATA mv_header TYPE abap_bool.
+    DATA mv_footer TYPE abap_bool.
+    DATA mv_id TYPE i.
+    DATA mv_line_count TYPE i.
+    DATA mv_page_lines TYPE i.
+    DATA mv_body_line TYPE i.
+    DATA ms_format TYPE ty_s_format.
+    DATA mv_col TYPE i.
+    DATA mv_col_line TYPE i.
+    DATA mv_next_pos TYPE i.
+    DATA mv_line_size TYPE i.
 
   PRIVATE SECTION.
 
@@ -149,7 +419,64 @@ CLASS z2ui5_cl_cgui_list DEFINITION PUBLIC FINAL CREATE PUBLIC.
       IMPORTING
         node   TYPE REF TO z2ui5_cl_ui5_view_builder
         client TYPE REF TO z2ui5_if_client
-        item   TYPE ty_s_item.
+        item   TYPE ty_s_item
+        inputs TYPE ty_t_input OPTIONAL.
+
+    "! a text with QUICKINFO: the text in a box carrying the tooltip
+    METHODS render_text_tooltip
+      IMPORTING
+        node   TYPE REF TO z2ui5_cl_ui5_view_builder
+        client TYPE REF TO z2ui5_if_client
+        item   TYPE ty_s_item
+        inputs TYPE ty_t_input OPTIONAL.
+
+    METHODS render_items
+      IMPORTING
+        node   TYPE REF TO z2ui5_cl_ui5_view_builder
+        client TYPE REF TO z2ui5_if_client
+        items  TYPE ty_t_item
+        inputs TYPE ty_t_input OPTIONAL.
+
+    "! the items in the order shown: header, body and footer per page, the
+    "! page numbers filled in
+    METHODS sequence
+      RETURNING
+        VALUE(result) TYPE ty_t_item.
+
+    CLASS-METHODS page_copy
+      IMPORTING
+        items         TYPE ty_t_item
+        page          TYPE i
+      RETURNING
+        VALUE(result) TYPE ty_t_item.
+
+    CLASS-METHODS text_format
+      IMPORTING
+        val           TYPE any
+        currency      TYPE clike
+        unit          TYPE clike
+        decimals      TYPE i
+        no_zero       TYPE abap_bool
+        no_sign       TYPE abap_bool
+        edit_mask     TYPE clike     OPTIONAL
+        no_grouping   TYPE abap_bool DEFAULT abap_false
+        round         TYPE i         DEFAULT 0
+        date_format   TYPE clike     OPTIONAL
+        time_zone     TYPE clike     OPTIONAL
+      RETURNING
+        VALUE(result) TYPE string.
+
+    "! the thousands separator of the user's number format
+    CLASS-METHODS grouping_char
+      RETURNING
+        VALUE(result) TYPE string.
+
+    "! the items as the lines they print as
+    METHODS items_to_text
+      IMPORTING
+        items         TYPE ty_t_item
+      RETURNING
+        VALUE(result) TYPE string_table.
 
 ENDCLASS.
 
@@ -172,20 +499,188 @@ CLASS z2ui5_cl_cgui_list IMPLEMENTATION.
     IF hide IS SUPPLIED.
       ls_item-hide = |{ hide }|.
     ENDIF.
-    ls_item-kind    = cs_kind-text.
-    ls_item-text    = z2ui5_cl_cgui_context=>conv_to_text( val ).
-    ls_item-color   = color.
-    ls_item-hotspot = hotspot.
+    ls_item-kind        = cs_kind-text.
+    ls_item-text        = text_format( val         = val
+                                       currency    = currency
+                                       unit        = unit
+                                       decimals    = decimals
+                                       no_zero     = no_zero
+                                       no_sign     = no_sign
+                                       edit_mask   = edit_mask
+                                       no_grouping = no_grouping
+                                       round       = round
+                                       date_format = date_format
+                                       time_zone   = time_zone ).
+    " FORMAT gives what is not passed
+    ls_item-color       = COND #( WHEN color IS SUPPLIED THEN color ELSE ms_format-color ).
+    ls_item-hotspot     = COND #( WHEN hotspot IS SUPPLIED THEN hotspot ELSE ms_format-hotspot ).
+    ls_item-intensified = COND #( WHEN intensified IS SUPPLIED THEN intensified ELSE ms_format-intensified ).
+    ls_item-inverse     = COND #( WHEN inverse IS SUPPLIED THEN inverse ELSE ms_format-inverse ).
+    ls_item-input       = COND #( WHEN input IS SUPPLIED THEN input ELSE ms_format-input ).
+    ls_item-pos         = pos.
+    ls_item-len         = len.
+    ls_item-justify     = to_upper( justify ).
+    ls_item-no_gap      = no_gap.
+    ls_item-quickinfo   = quickinfo.
+    ls_item-name        = to_upper( name ).
+
+    " WRITE UNDER g - the column g was written at
+    IF under IS NOT INITIAL.
+      DATA(lv_under) = to_upper( under ).
+      LOOP AT mt_item INTO DATA(ls_under) WHERE name = lv_under.
+        ls_item-pos = ls_under-col.
+      ENDLOOP.
+    ENDIF.
+
     item_add( ls_item ).
 
     result = me.
 
   ENDMETHOD.
 
+  METHOD format.
+
+    IF reset = abap_true.
+      CLEAR ms_format.
+    ENDIF.
+    IF color IS SUPPLIED.
+      ms_format-color = color.
+    ENDIF.
+    IF intensified IS SUPPLIED.
+      ms_format-intensified = intensified.
+    ENDIF.
+    IF inverse IS SUPPLIED.
+      ms_format-inverse = inverse.
+    ENDIF.
+    IF hotspot IS SUPPLIED.
+      ms_format-hotspot = hotspot.
+    ENDIF.
+    IF input IS SUPPLIED.
+      ms_format-input = input.
+    ENDIF.
+    result = me.
+
+  ENDMETHOD.
+
+  METHOD get_format.
+
+    result = ms_format.
+
+  ENDMETHOD.
+
+  METHOD position.
+
+    mv_next_pos = nmax( val1 = 1 val2 = col ).
+    result = me.
+
+  ENDMETHOD.
+
+  METHOD reserve.
+
+    result = me.
+    IF mv_line_count <= 0 OR lines <= 0.
+      RETURN.
+    ENDIF.
+    " the lines the page holds already - the current one counts when it has
+    " content
+    IF mv_line_count - mv_page_lines < lines.
+      new_page( ).
+    ENDIF.
+
+  ENDMETHOD.
+
+  METHOD skip_to_line.
+
+    result = me.
+    IF line_exists( mt_item[ line = mv_line ] ).
+      new_line( ).
+    ENDIF.
+    DATA(lv_gap) = line - 1 - mv_page_lines.
+    IF lv_gap > 0.
+      skip( lv_gap ).
+    ENDIF.
+
+  ENDMETHOD.
+
+  METHOD set_line_size.
+
+    mv_line_size = val.
+
+  ENDMETHOD.
+
+  METHOD get_line_size.
+
+    result = mv_line_size.
+
+  ENDMETHOD.
+
+  METHOD current_line.
+
+    result = mv_line.
+
+  ENDMETHOD.
+
+  METHOD current_column.
+
+    result = COND #( WHEN mv_next_pos > 0 THEN mv_next_pos
+                     WHEN mv_col_line = mv_line THEN mv_col + 1
+                     ELSE 1 ).
+
+  ENDMETHOD.
+
+  METHOD current_page.
+
+    result = get_page_count( ).
+
+  ENDMETHOD.
+
+  METHOD describe_lines.
+
+    DATA lv_last TYPE i.
+
+    LOOP AT mt_item INTO DATA(ls_item) WHERE header = abap_false AND footer = abap_false.
+      IF ls_item-line <> lv_last.
+        lv_last = ls_item-line.
+        result = result + 1.
+      ENDIF.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD line_text.
+
+    DATA lt_item TYPE ty_t_item.
+
+    LOOP AT mt_item INTO DATA(ls_item) WHERE line = line.
+      INSERT ls_item INTO TABLE lt_item.
+    ENDLOOP.
+    DATA(lt_text) = items_to_text( lt_item ).
+    READ TABLE lt_text INTO result INDEX 1.
+
+  ENDMETHOD.
+
+  METHOD get_item_by_id.
+
+    READ TABLE mt_item INTO result WITH KEY id = id.
+
+  ENDMETHOD.
+
+  METHOD hide.
+
+    DATA(lv_hide) = |{ val }|.
+    LOOP AT mt_item REFERENCE INTO DATA(lr_item) WHERE line = mv_line AND kind = cs_kind-text.
+      lr_item->hide    = lv_hide.
+      lr_item->hotspot = abap_true.
+    ENDLOOP.
+    result = me.
+
+  ENDMETHOD.
+
   METHOD write_as_checkbox.
 
-    item_add( VALUE #( kind = cs_kind-checkbox
-                       flag = val ) ).
+    item_add( VALUE #( kind  = cs_kind-checkbox
+                       flag  = val
+                       input = input ) ).
     result = me.
 
   ENDMETHOD.
@@ -218,7 +713,9 @@ CLASS z2ui5_cl_cgui_list IMPLEMENTATION.
   METHOD uline.
 
     new_line( ).
-    item_add( VALUE #( kind = cs_kind-uline ) ).
+    item_add( VALUE #( kind = cs_kind-uline
+                       pos  = pos
+                       len  = len ) ).
     new_line( ).
     result = me.
 
@@ -226,9 +723,13 @@ CLASS z2ui5_cl_cgui_list IMPLEMENTATION.
 
   METHOD new_page.
 
+    IF line_count IS SUPPLIED.
+      mv_line_count = line_count.
+    ENDIF.
     new_line( ).
-    item_add( VALUE #( kind = cs_kind-page
-                       text = title ) ).
+    item_add( VALUE #( kind       = cs_kind-page
+                       text       = title
+                       no_heading = no_heading ) ).
     new_line( ).
     result = me.
 
@@ -236,7 +737,7 @@ CLASS z2ui5_cl_cgui_list IMPLEMENTATION.
 
   METHOD clear.
 
-    CLEAR mt_item.
+    CLEAR: mt_item, mv_page_lines, mv_body_line, mv_id, ms_format, mv_col, mv_col_line, mv_next_pos.
     mv_line = 1.
 
   ENDMETHOD.
@@ -259,87 +760,604 @@ CLASS z2ui5_cl_cgui_list IMPLEMENTATION.
   METHOD item_add.
 
     DATA(ls_item) = val.
-    ls_item-line = mv_line.
+    ls_item-line   = mv_line.
+    ls_item-header = mv_header.
+    ls_item-footer = mv_footer.
+
+    " LINE-COUNT: the line after the last one of a page starts a new page
+    IF ls_item-header = abap_false AND ls_item-footer = abap_false.
+      IF ls_item-kind = cs_kind-page.
+        mv_page_lines = 0.
+        mv_body_line = ls_item-line.
+      ELSEIF ls_item-line <> mv_body_line.
+        mv_body_line = ls_item-line.
+        mv_page_lines = mv_page_lines + 1.
+        IF mv_line_count > 0 AND mv_page_lines > mv_line_count.
+          mv_id = mv_id + 1.
+          INSERT VALUE #( line = mv_line
+                          kind = cs_kind-page
+                          id   = mv_id ) INTO TABLE mt_item.
+          mv_line = mv_line + 1.
+          ls_item-line = mv_line.
+          mv_body_line = mv_line.
+          mv_page_lines = 1.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+
+    " the column of the item - SY-COLNO, WRITE UNDER and POSITION
+    IF ls_item-kind = cs_kind-text OR ls_item-kind = cs_kind-checkbox OR ls_item-kind = cs_kind-icon.
+      IF mv_col_line <> ls_item-line.
+        mv_col_line = ls_item-line.
+        mv_col = 0.
+      ENDIF.
+      IF ls_item-pos = 0 AND mv_next_pos > 0.
+        ls_item-pos = mv_next_pos.
+      ENDIF.
+      CLEAR mv_next_pos.
+      IF ls_item-pos > 0.
+        mv_col = ls_item-pos - 1.
+      ENDIF.
+      ls_item-col = mv_col + 1.
+      DATA(lv_width) = COND i( WHEN ls_item-len > 0 THEN ls_item-len
+                               WHEN ls_item-kind = cs_kind-checkbox THEN 3
+                               WHEN ls_item-kind = cs_kind-icon THEN 2
+                               ELSE strlen( ls_item-text ) ).
+      mv_col = mv_col + lv_width + COND i( WHEN ls_item-no_gap = abap_true THEN 0 ELSE 1 ).
+    ENDIF.
+
+    mv_id = mv_id + 1.
+    ls_item-id = mv_id.
     INSERT ls_item INTO TABLE mt_item.
+
+  ENDMETHOD.
+
+  METHOD header_begin.
+
+    mv_header = abap_true.
+
+  ENDMETHOD.
+
+  METHOD header_end.
+
+    " the header ends with its line - the list starts on a line of its own
+    IF mv_header = abap_true AND line_exists( mt_item[ line = mv_line ] ).
+      new_line( ).
+    ENDIF.
+    mv_header = abap_false.
+
+  ENDMETHOD.
+
+  METHOD footer_begin.
+
+    IF line_exists( mt_item[ line = mv_line ] ).
+      new_line( ).
+    ENDIF.
+    mv_footer = abap_true.
+
+  ENDMETHOD.
+
+  METHOD footer_end.
+
+    IF mv_footer = abap_true AND line_exists( mt_item[ line = mv_line ] ).
+      new_line( ).
+    ENDIF.
+    mv_footer = abap_false.
+
+  ENDMETHOD.
+
+  METHOD set_line_count.
+
+    mv_line_count = val.
+
+  ENDMETHOD.
+
+  METHOD get_page_count.
+
+    result = 1.
+    LOOP AT mt_item TRANSPORTING NO FIELDS WHERE kind = cs_kind-page AND header = abap_false AND footer = abap_false.
+      result = result + 1.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD get_inputs.
+
+    LOOP AT mt_item INTO DATA(ls_item) WHERE input = abap_true.
+      INSERT VALUE #( id    = ls_item-id
+                      line  = ls_item-line
+                      value = ls_item-text
+                      flag  = ls_item-flag ) INTO TABLE result.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD set_inputs.
+
+    LOOP AT val INTO DATA(ls_input).
+      LOOP AT mt_item REFERENCE INTO DATA(lr_item) WHERE id = ls_input-id AND input = abap_true.
+        lr_item->text = ls_input-value.
+        lr_item->flag = ls_input-flag.
+      ENDLOOP.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD read_line.
+
+    LOOP AT mt_item INTO DATA(ls_item) WHERE line = line
+         AND ( kind = cs_kind-text OR kind = cs_kind-checkbox OR kind = cs_kind-icon ).
+      INSERT ls_item INTO TABLE result.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD read_value.
+
+    DATA(lt_item) = read_line( line ).
+    READ TABLE lt_item INTO DATA(ls_item) INDEX index.
+    IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
+    IF ls_item-kind = cs_kind-checkbox.
+      result = COND #( WHEN ls_item-flag = abap_true THEN `X` ).
+    ELSE.
+      result = ls_item-text.
+    ENDIF.
+
+  ENDMETHOD.
+
+  METHOD modify_line.
+
+    DATA lv_count TYPE i.
+
+    LOOP AT mt_item REFERENCE INTO DATA(lr_item) WHERE line = line
+         AND ( kind = cs_kind-text OR kind = cs_kind-checkbox OR kind = cs_kind-icon ).
+      lv_count = lv_count + 1.
+      IF lv_count <> index.
+        CONTINUE.
+      ENDIF.
+      IF lr_item->kind = cs_kind-checkbox.
+        lr_item->flag = xsdbool( value IS NOT INITIAL ).
+      ELSE.
+        lr_item->text = z2ui5_cl_cgui_context=>conv_to_text( value ).
+      ENDIF.
+      IF color IS SUPPLIED.
+        lr_item->color = color.
+      ENDIF.
+      RETURN.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD text_format.
+
+    DATA lv_number TYPE decfloat34.
+    DATA lv_text   TYPE c LENGTH 255.
+
+    DATA(lo_descr) = cl_abap_typedescr=>describe_by_data( val ).
+    DATA(lv_kind) = lo_descr->type_kind.
+    DATA(lv_numeric) = xsdbool( lv_kind = cl_abap_typedescr=>typekind_int
+                             OR lv_kind = cl_abap_typedescr=>typekind_int1
+                             OR lv_kind = cl_abap_typedescr=>typekind_int2
+                             OR lv_kind = cl_abap_typedescr=>typekind_int8
+                             OR lv_kind = cl_abap_typedescr=>typekind_packed
+                             OR lv_kind = cl_abap_typedescr=>typekind_float
+                             OR lv_kind = cl_abap_typedescr=>typekind_decfloat16
+                             OR lv_kind = cl_abap_typedescr=>typekind_decfloat34 ).
+
+    IF no_zero = abap_true AND val IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    TRY.
+        IF edit_mask IS NOT INITIAL.
+          " USING EDIT MASK - also ==ALPHA and the other conversion exits
+          WRITE val TO lv_text USING EDIT MASK edit_mask.
+          result = shift_left( val = |{ lv_text }| sub = ` ` ).
+        ELSEIF date_format IS NOT INITIAL AND lv_kind = cl_abap_typedescr=>typekind_date.
+          CASE to_upper( date_format ).
+            WHEN cs_date_format-dd_mm_yy.
+              WRITE val TO lv_text DD/MM/YY.
+            WHEN cs_date_format-mm_dd_yy.
+              WRITE val TO lv_text MM/DD/YY.
+            WHEN cs_date_format-dd_mm_yyyy.
+              WRITE val TO lv_text DD/MM/YYYY.
+            WHEN cs_date_format-mm_dd_yyyy.
+              WRITE val TO lv_text MM/DD/YYYY.
+            WHEN cs_date_format-ddmmyy.
+              WRITE val TO lv_text DDMMYY.
+            WHEN cs_date_format-mmddyy.
+              WRITE val TO lv_text MMDDYY.
+            WHEN cs_date_format-yymmdd.
+              WRITE val TO lv_text YYMMDD.
+            WHEN OTHERS.
+              WRITE val TO lv_text.
+          ENDCASE.
+          result = condense( lv_text ).
+        ELSEIF time_zone IS NOT INITIAL AND lv_kind = cl_abap_typedescr=>typekind_packed
+            AND ( ( lo_descr->length = 8 AND CAST cl_abap_elemdescr( lo_descr )->decimals = 0 )
+               OR ( lo_descr->length = 11 AND CAST cl_abap_elemdescr( lo_descr )->decimals = 7 ) ).
+          " a time stamp in the time zone given
+          DATA(lv_zone) = CONV tznzone( time_zone ).
+          WRITE val TO lv_text TIME ZONE lv_zone.
+          result = condense( lv_text ).
+        ELSEIF lv_numeric = abap_true AND currency IS NOT INITIAL.
+          WRITE val TO lv_text CURRENCY currency LEFT-JUSTIFIED.
+          result = condense( lv_text ).
+        ELSEIF lv_numeric = abap_true AND unit IS NOT INITIAL.
+          WRITE val TO lv_text UNIT unit LEFT-JUSTIFIED.
+          result = condense( lv_text ).
+        ELSEIF lv_numeric = abap_true AND ( decimals >= 0 OR round <> 0 ).
+          " ROUND r: the value times 10 ** -r
+          lv_number = val.
+          IF round <> 0.
+            lv_number = lv_number / ( CONV decfloat34( 10 ) ** round ).
+          ENDIF.
+          DATA(lv_decimals) = COND i( WHEN decimals >= 0 THEN decimals
+                                      WHEN lv_kind = cl_abap_typedescr=>typekind_packed
+                                      THEN CAST cl_abap_elemdescr( lo_descr )->decimals
+                                      ELSE 0 ).
+          result = |{ lv_number NUMBER = USER DECIMALS = lv_decimals }|.
+        ELSEIF lv_numeric = abap_true AND no_grouping = abap_true.
+          lv_number = val.
+          result = |{ lv_number NUMBER = USER }|.
+        ELSE.
+          result = z2ui5_cl_cgui_context=>conv_to_text( val ).
+        ENDIF.
+      CATCH cx_root.
+        result = z2ui5_cl_cgui_context=>conv_to_text( val ).
+    ENDTRY.
+
+    " NO-GROUPING: without the thousands separator
+    IF no_grouping = abap_true AND lv_numeric = abap_true.
+      DATA(lv_group) = grouping_char( ).
+      IF lv_group IS NOT INITIAL.
+        result = replace( val = result sub = lv_group with = `` occ = 0 ).
+      ENDIF.
+    ENDIF.
+    " NO-ZERO: the leading zeros of a numeric text go
+    IF no_zero = abap_true AND ( lv_kind = cl_abap_typedescr=>typekind_num OR lv_kind = cl_abap_typedescr=>typekind_char ).
+      result = shift_left( val = result sub = `0` ).
+    ENDIF.
+    IF no_sign = abap_true AND lv_numeric = abap_true.
+      result = replace( val = result sub = `-` with = `` occ = 0 ).
+    ENDIF.
+
+  ENDMETHOD.
+
+  METHOD grouping_char.
+
+    DATA(lv_sample) = |{ CONV decfloat34( 1000 ) NUMBER = USER DECIMALS = 0 }|.
+    IF strlen( lv_sample ) = 5.
+      result = lv_sample+1(1).
+    ENDIF.
+
+  ENDMETHOD.
+
+  METHOD page_copy.
+
+    result = items.
+    LOOP AT result REFERENCE INTO DATA(lr_item) WHERE text CS cv_page.
+      lr_item->text = replace( val = lr_item->text sub = cv_page with = |{ page }| occ = 0 ).
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD sequence.
+
+    DATA lt_header TYPE ty_t_item.
+    DATA lt_footer TYPE ty_t_item.
+    DATA lv_page   TYPE i VALUE 1.
+
+    LOOP AT mt_item INTO DATA(ls_item).
+      IF ls_item-header = abap_true.
+        INSERT ls_item INTO TABLE lt_header.
+      ELSEIF ls_item-footer = abap_true.
+        INSERT ls_item INTO TABLE lt_footer.
+      ENDIF.
+    ENDLOOP.
+
+    INSERT LINES OF page_copy( items = lt_header
+                               page  = lv_page ) INTO TABLE result.
+    LOOP AT mt_item INTO ls_item WHERE header = abap_false AND footer = abap_false.
+      IF ls_item-kind = cs_kind-page.
+        INSERT LINES OF page_copy( items = lt_footer
+                                   page  = lv_page ) INTO TABLE result.
+        INSERT ls_item INTO TABLE result.
+        lv_page = lv_page + 1.
+        IF ls_item-no_heading = abap_false.
+          INSERT LINES OF page_copy( items = lt_header
+                                     page  = lv_page ) INTO TABLE result.
+        ENDIF.
+      ELSE.
+        INSERT ls_item INTO TABLE result.
+      ENDIF.
+    ENDLOOP.
+    INSERT LINES OF page_copy( items = lt_footer
+                               page  = lv_page ) INTO TABLE result.
+
+  ENDMETHOD.
+
+  METHOD has_content.
+
+    LOOP AT mt_item TRANSPORTING NO FIELDS WHERE header = abap_false AND footer = abap_false.
+      result = abap_true.
+      RETURN.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD to_text.
+
+    result = items_to_text( sequence( ) ).
+
+  ENDMETHOD.
+
+  METHOD items_to_text.
+
+    DATA lv_text TYPE string.
+    DATA lv_line TYPE i.
+    DATA lv_gap  TYPE abap_bool.
+
+    LOOP AT items REFERENCE INTO DATA(lr_item).
+      IF lr_item->line <> lv_line AND lv_line > 0.
+        INSERT lv_text INTO TABLE result.
+        CLEAR: lv_text, lv_gap.
+      ENDIF.
+      lv_line = lr_item->line.
+      CASE lr_item->kind.
+        WHEN cs_kind-uline.
+          IF lr_item->pos > 1.
+            lv_text = repeat( val = ` ` occ = lr_item->pos - 1 ).
+          ENDIF.
+          lv_text = lv_text && repeat( val = `-`
+                                       occ = COND i( WHEN lr_item->len > 0 THEN lr_item->len
+                                                     WHEN mv_line_size > 0 THEN mv_line_size
+                                                     ELSE 80 ) ).
+        WHEN cs_kind-page OR cs_kind-text OR cs_kind-icon OR cs_kind-checkbox.
+          IF lr_item->pos > 0 AND strlen( lv_text ) < lr_item->pos - 1.
+            lv_text = lv_text && repeat( val = ` ` occ = lr_item->pos - 1 - strlen( lv_text ) ).
+          ELSEIF lv_text IS NOT INITIAL AND lv_gap = abap_false.
+            lv_text = lv_text && ` `.
+          ENDIF.
+          lv_gap = lr_item->no_gap.
+          IF lr_item->kind = cs_kind-checkbox.
+            lv_text = lv_text && COND string( WHEN lr_item->flag = abap_true THEN `[X]` ELSE `[ ]` ).
+          ELSEIF lr_item->len > 0 AND lr_item->justify = cs_justify-right.
+            lv_text = lv_text && substring( val = |{ lr_item->text WIDTH = lr_item->len ALIGN = RIGHT }|
+                                            len = lr_item->len ).
+          ELSEIF lr_item->len > 0 AND lr_item->justify = cs_justify-center.
+            lv_text = lv_text && substring( val = |{ lr_item->text WIDTH = lr_item->len ALIGN = CENTER }|
+                                            len = lr_item->len ).
+          ELSEIF lr_item->len > 0.
+            lv_text = lv_text && substring( val = |{ lr_item->text WIDTH = lr_item->len }|
+                                            len = lr_item->len ).
+          ELSE.
+            lv_text = lv_text && lr_item->text.
+          ENDIF.
+      ENDCASE.
+    ENDLOOP.
+    IF lv_line > 0.
+      INSERT lv_text INTO TABLE result.
+    ENDIF.
+
+    " LINE-SIZE cuts the lines
+    IF mv_line_size > 0.
+      LOOP AT result REFERENCE INTO DATA(lr_text) WHERE table_line IS NOT INITIAL.
+        IF strlen( lr_text->* ) > mv_line_size.
+          lr_text->* = substring( val = lr_text->* len = mv_line_size ).
+        ENDIF.
+      ENDLOOP.
+    ENDIF.
 
   ENDMETHOD.
 
   METHOD render.
 
-    DATA lo_line TYPE REF TO z2ui5_cl_ui5_view_builder.
-    DATA lv_line TYPE i.
-
+    " TOP-OF-PAGE and END-OF-PAGE: header and footer around every page
     DATA(lo_list) = node->ele( `VBox`
         )->a( n = `class` v = `sapUiSmallMargin` ).
 
-    LOOP AT mt_item REFERENCE INTO DATA(lr_item).
+    render_items( node   = lo_list
+                  client = client
+                  items  = sequence( )
+                  inputs = inputs ).
+
+  ENDMETHOD.
+
+  METHOD render_text_tooltip.
+
+    " the box takes the tooltip, the text inside is rendered as without
+    DATA(ls_item) = item.
+    CLEAR ls_item-quickinfo.
+    DATA(lo_box) = node->ele( `HBox`
+        )->a( n = `tooltip` t = item-quickinfo ).
+    render_item( node   = lo_box
+                 client = client
+                 item   = ls_item
+                 inputs = inputs ).
+
+  ENDMETHOD.
+
+  METHOD render_items.
+
+    " WRITE AT pos(len): a spacer fills up to the column, the value takes
+    " its width - both in characters, so the columns line up line by line
+    DATA lo_line TYPE REF TO z2ui5_cl_ui5_view_builder.
+    DATA lv_line TYPE i.
+    DATA lv_col  TYPE i.
+
+    LOOP AT items REFERENCE INTO DATA(lr_item).
 
       IF lr_item->kind = cs_kind-skip OR lr_item->kind = cs_kind-uline OR lr_item->kind = cs_kind-page.
-        render_item( node   = lo_list
+        render_item( node   = node
                      client = client
-                     item   = lr_item->* ).
+                     item   = lr_item->*
+                     inputs = inputs ).
         CLEAR lo_line.
         CONTINUE.
       ENDIF.
 
       IF lo_line IS NOT BOUND OR lv_line <> lr_item->line.
         lv_line = lr_item->line.
-        lo_line = lo_list->ele( `HBox`
+        lv_col = 0.
+        lo_line = node->ele( `HBox`
             )->a( n = `alignItems` v = `Center` ).
+      ENDIF.
+
+      IF lr_item->pos > 0.
+        IF lr_item->pos - 1 > lv_col.
+          lo_line->tag( `HBox`
+              )->a( n = `width` v = |{ lr_item->pos - 1 - lv_col }ch| ).
+        ENDIF.
+        lv_col = lr_item->pos - 1.
       ENDIF.
 
       render_item( node   = lo_line
                    client = client
-                   item   = lr_item->* ).
+                   item   = lr_item->*
+                   inputs = inputs ).
+
+      IF lr_item->len > 0.
+        lv_col = lv_col + lr_item->len.
+      ELSEIF lr_item->no_gap = abap_true.
+        lv_col = lv_col + strlen( lr_item->text ).
+      ELSE.
+        lv_col = lv_col + strlen( lr_item->text ) + 1.
+      ENDIF.
     ENDLOOP.
 
   ENDMETHOD.
 
   METHOD render_item.
 
+    FIELD-SYMBOLS <input> TYPE ty_s_input.
+
+    " NO-GAP: no space to the next item
+    DATA(lv_class) = COND string( WHEN item-no_gap = abap_true THEN `` ELSE `sapUiTinyMarginEnd` ).
+
+    " an input field is bound to its line of inputs
+    IF item-input = abap_true.
+      READ TABLE inputs TRANSPORTING NO FIELDS WITH KEY id = item-id.
+      IF sy-subrc = 0.
+        DATA(lv_index) = sy-tabix.
+        ASSIGN inputs[ lv_index ] TO <input>.
+        IF item-kind = cs_kind-checkbox.
+          node->tag( `CheckBox`
+              )->a( n = `selected` v = client->_bind( val       = <input>-flag
+                                                     tab       = inputs
+                                                     tab_index = lv_index ) ).
+        ELSE.
+          node->tag( `Input`
+              )->a( n = `value` v = client->_bind( val       = <input>-value
+                                                  tab       = inputs
+                                                  tab_index = lv_index )
+              )->a( n = `width` v = |{ COND i( WHEN item-len > 0 THEN item-len ELSE nmax( val1 = strlen( item-text ) val2 = 10 ) ) + 2 }ch|
+              )->a( n = `class` v = lv_class ).
+        ENDIF.
+        RETURN.
+      ENDIF.
+    ENDIF.
+
+    IF item-kind = cs_kind-text AND item-quickinfo IS NOT INITIAL.
+      render_text_tooltip( node   = node
+                           client = client
+                           item   = item
+                           inputs = inputs ).
+      RETURN.
+    ENDIF.
+
     CASE item-kind.
 
       WHEN cs_kind-text.
+        IF item-hotspot = abap_false AND ( item-inverse = abap_true OR ( item-intensified = abap_true AND item-color IS NOT INITIAL ) ).
+          node->tag( `ObjectStatus`
+              )->a( n = `text`     t = item-text
+              )->a( n = `state`    t = COND #( WHEN item-color IS NOT INITIAL THEN item-color ELSE `Information` )
+              )->a( n = `inverted` b = item-inverse
+              )->a( n = `class`    v = lv_class ).
+          RETURN.
+        ENDIF.
+        IF item-hotspot = abap_false AND item-intensified = abap_true AND item-color IS INITIAL.
+          node->tag( `Label`
+              )->a( n = `text`   t = item-text
+              )->a( n = `design` v = `Bold`
+              )->a( n = `class`  v = lv_class ).
+          IF item-len > 0.
+            node->a( n = `width` v = |{ item-len }ch| ).
+          ENDIF.
+          RETURN.
+        ENDIF.
         IF item-hotspot = abap_true.
           node->tag( `Link`
               )->a( n = `text`  t = item-text
-              )->a( n = `class` v = `sapUiTinyMarginEnd`
+              )->a( n = `class` v = lv_class
               )->a( n = `press` v = client->_event( val   = cs_event-line_selection
                                                     t_arg = VALUE #( ( |{ item-line }| )
-                                                                     ( item-hide ) )
+                                                                     ( item-hide )
+                                                                     ( |{ item-id }| ) )
                                                     s_ctrl = VALUE #( check_arg_literal = abap_true ) ) ).
         ELSEIF item-color IS NOT INITIAL.
           node->tag( `ObjectStatus`
               )->a( n = `text`  t = item-text
               )->a( n = `state` t = item-color
-              )->a( n = `class` v = `sapUiTinyMarginEnd` ).
+              )->a( n = `class` v = lv_class ).
         ELSE.
           node->tag( `Text`
               )->a( n = `text`             t = item-text
               )->a( n = `renderWhitespace` b = abap_true
               )->a( n = `wrapping`         b = abap_false
-              )->a( n = `class`            v = `sapUiTinyMarginEnd` ).
+              )->a( n = `class`            v = lv_class ).
+          IF item-len > 0.
+            node->a( n = `width` v = |{ item-len }ch| ).
+            CASE item-justify.
+              WHEN cs_justify-right.
+                node->a( n = `textAlign` v = `End` ).
+              WHEN cs_justify-center.
+                node->a( n = `textAlign` v = `Center` ).
+            ENDCASE.
+          ENDIF.
         ENDIF.
 
       WHEN cs_kind-checkbox.
         node->tag( `CheckBox`
             )->a( n = `selected` b = item-flag
             )->a( n = `editable` b = abap_false ).
+        IF item-quickinfo IS NOT INITIAL.
+          node->a( n = `tooltip` t = item-quickinfo ).
+        ENDIF.
 
       WHEN cs_kind-icon.
         node->tag( n = `Icon` ns = `core`
             )->a( n = `xmlns:core` v = `sap.ui.core`
             )->a( n = `src`        v = item-text
-            )->a( n = `class`      v = `sapUiTinyMarginEnd` ).
+            )->a( n = `class`      v = lv_class ).
+        IF item-quickinfo IS NOT INITIAL.
+          node->a( n = `tooltip` t = item-quickinfo ).
+        ENDIF.
 
       WHEN cs_kind-skip.
         node->tag( `HBox`
             )->a( n = `height` v = |{ item-text }rem| ).
 
       WHEN cs_kind-uline.
-        node->tag( `Toolbar`
-            )->a( n = `height` v = `2px`
-            )->a( n = `design` v = `Solid` ).
+        IF item-pos > 1 OR item-len > 0.
+          " ULINE AT pos(len)
+          DATA(lo_rule) = node->ele( `HBox` ).
+          IF item-pos > 1.
+            lo_rule->tag( `HBox`
+                )->a( n = `width` v = |{ item-pos - 1 }ch| ).
+          ENDIF.
+          lo_rule->tag( `Toolbar`
+              )->a( n = `height` v = `2px`
+              )->a( n = `width`  v = COND #( WHEN item-len > 0 THEN |{ item-len }ch| ELSE `100%` )
+              )->a( n = `design` v = `Solid` ).
+        ELSE.
+          node->tag( `Toolbar`
+              )->a( n = `height` v = `2px`
+              )->a( n = `design` v = `Solid` ).
+        ENDIF.
 
       WHEN cs_kind-page.
         node->tag( `Title`

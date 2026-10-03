@@ -29,6 +29,8 @@ CLASS ltcl_test DEFINITION FINAL FOR TESTING
     METHODS fixed_values FOR TESTING.
     METHODS fixed_values_of_range FOR TESTING.
     METHODS no_value_help FOR TESTING.
+    METHODS value_check_fixed_values FOR TESTING.
+    METHODS dtel_name_and_docu FOR TESTING.
 
 ENDCLASS.
 
@@ -239,6 +241,42 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals( exp = abap_false
                                         act = z2ui5_cl_cgui_context=>rtti_check_value_help( cl_abap_typedescr=>describe_by_data( lv_char ) ) ).
     cl_abap_unit_assert=>assert_initial( z2ui5_cl_cgui_context=>rtti_get_value_table( cl_abap_typedescr=>describe_by_data( lv_char ) ) ).
+
+  ENDMETHOD.
+
+  METHOD value_check_fixed_values.
+
+    DATA lv_flag  TYPE xfeld.
+    DATA lv_plain TYPE c LENGTH 1.
+
+    lv_flag = `Q`.
+    cl_abap_unit_assert=>assert_false( z2ui5_cl_cgui_context=>value_check( lv_flag ) ).
+    lv_flag = `X`.
+    cl_abap_unit_assert=>assert_true( z2ui5_cl_cgui_context=>value_check( lv_flag ) ).
+    " nothing to check against - and an initial value is no error
+    lv_plain = `Q`.
+    cl_abap_unit_assert=>assert_true( z2ui5_cl_cgui_context=>value_check( lv_plain ) ).
+    CLEAR lv_flag.
+    cl_abap_unit_assert=>assert_true( z2ui5_cl_cgui_context=>value_check( lv_flag ) ).
+
+  ENDMETHOD.
+
+  METHOD dtel_name_and_docu.
+
+    DATA lv_carrid TYPE s_carr_id.
+    DATA lt_range  TYPE RANGE OF s_carr_id.
+    DATA lv_local  TYPE c LENGTH 3.
+
+    cl_abap_unit_assert=>assert_equals( act = z2ui5_cl_cgui_context=>rtti_get_dtel_name( lv_carrid )
+                                        exp = `S_CARR_ID` ).
+    cl_abap_unit_assert=>assert_equals( act = z2ui5_cl_cgui_context=>rtti_get_dtel_name( lt_range )
+                                        exp = `S_CARR_ID` ).
+    cl_abap_unit_assert=>assert_initial( z2ui5_cl_cgui_context=>rtti_get_dtel_name( lv_local ) ).
+    " a data element with documentation has paragraphs, one without none
+    IF z2ui5_cl_cgui_context=>dtel_docu_check( `S_CARR_ID` ) = abap_true.
+      cl_abap_unit_assert=>assert_not_initial( z2ui5_cl_cgui_context=>dtel_docu_read( `S_CARR_ID` ) ).
+    ENDIF.
+    cl_abap_unit_assert=>assert_false( z2ui5_cl_cgui_context=>dtel_docu_check( `ZZ_NO_SUCH_DTEL_42` ) ).
 
   ENDMETHOD.
 

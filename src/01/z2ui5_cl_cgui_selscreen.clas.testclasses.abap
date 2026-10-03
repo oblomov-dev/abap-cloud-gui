@@ -9,8 +9,11 @@ CLASS ltcl_app DEFINITION FINAL CREATE PUBLIC.
     DATA mv_rb_a   TYPE abap_bool.
     DATA mv_rb_b   TYPE abap_bool.
     DATA mv_hidden TYPE string.
+    DATA mv_char   TYPE c LENGTH 3.
+    DATA mv_char2  TYPE c LENGTH 3.
     DATA mt_flag   TYPE RANGE OF xsdboolean.
     DATA mt_text   TYPE RANGE OF string.
+    DATA mv_carrid TYPE s_carr_id.
 
 ENDCLASS.
 
@@ -52,6 +55,16 @@ CLASS ltcl_test DEFINITION FINAL FOR TESTING
     METHODS value_help_auto FOR TESTING.
     METHODS select_option_without_help FOR TESTING.
     METHODS preview FOR TESTING.
+    METHODS listbox_values FOR TESTING.
+    METHODS tabbed_block FOR TESTING.
+    METHODS skip_and_uline FOR TESTING.
+    METHODS range_inputs FOR TESTING.
+    METHODS upper_case_flag FOR TESTING.
+    METHODS blocks_groups_function_keys FOR TESTING.
+    METHODS help_button FOR TESTING.
+    METHODS high_value_help FOR TESTING.
+    METHODS screen_attributes_r10 FOR TESTING.
+    METHODS block_no_intervals_matchcode FOR TESTING.
 
 ENDCLASS.
 
@@ -81,7 +94,7 @@ CLASS ltcl_client IMPLEMENTATION.
 
   METHOD z2ui5_if_client~_event.
 
-    result = |EVENT:{ val }|.
+    result = |EVENT:{ val }{ COND #( WHEN t_arg IS NOT INITIAL THEN |:{ concat_lines_of( table = t_arg sep = `,` ) }| WHEN arg IS NOT INITIAL THEN |:{ arg }| ) }|.
 
   ENDMETHOD.
 
@@ -289,9 +302,9 @@ CLASS ltcl_test IMPLEMENTATION.
 
     DATA(lv_view) = lo_screen->stringify( ).
     cl_abap_unit_assert=>assert_char_cp( act = lv_view
-                                         exp = `*valueHelpRequest="EVENT:CGUI_VALUE_REQUEST"*` ).
+                                         exp = `*valueHelpRequest="EVENT:CGUI_VALUE_REQUEST:MT_FLAG"*` ).
     cl_abap_unit_assert=>assert_char_cp( act = lv_view
-                                         exp = `*tooltip="Multiple selection" enabled="true" class="sapUiTinyMarginBegin" press="EVENT:CGUI_SELECT_OPTION"*` ).
+                                         exp = `*tooltip="Multiple selection" enabled="true" class="sapUiTinyMarginBegin" press="EVENT:CGUI_SELECT_OPTION:MT_FLAG"*` ).
 
   ENDMETHOD.
 
@@ -334,6 +347,216 @@ CLASS ltcl_test IMPLEMENTATION.
                                          exp = `*<Label text="Range"*` ).
     cl_abap_unit_assert=>assert_char_np( act = lv_view
                                          exp = `*{/*` ).
+
+  ENDMETHOD.
+
+  METHOD listbox_values.
+
+    DATA(lo_screen) = z2ui5_cl_cgui_selscreen=>factory( mo_client ).
+    lo_screen->parameter( val          = mo_app->mv_text
+                          as_listbox   = abap_true
+                          user_command = `PICK` ).
+    lo_screen->set_listbox_values( name   = `MV_TEXT`
+                                   values = VALUE #( ( key = `A` text = `Alpha` )
+                                                     ( key = `B` text = `Beta` ) ) ).
+
+    DATA(lv_view) = lo_screen->stringify( ).
+    cl_abap_unit_assert=>assert_char_cp( act = lv_view
+                                         exp = `*<Select*selectedKey="{/MV_TEXT}"*` ).
+    cl_abap_unit_assert=>assert_char_cp( act = lv_view
+                                         exp = `*key="B" text="Beta"*` ).
+    cl_abap_unit_assert=>assert_char_cp( act = lv_view
+                                         exp = `*change="EVENT:PICK"*` ).
+
+  ENDMETHOD.
+
+  METHOD tabbed_block.
+
+    DATA(lo_screen) = z2ui5_cl_cgui_selscreen=>factory( mo_client ).
+    lo_screen->tabbed_block_begin(
+        )->tab( `First`
+        )->parameter( mo_app->mv_text
+        )->tab( `Second`
+        )->parameter( mo_app->mv_date
+        )->tabbed_block_end( ).
+    lo_screen->set_tabbed_block_binding( index = 1
+                                         bind  = `{/TAB}` ).
+
+    cl_abap_unit_assert=>assert_equals( act = lo_screen->get_tabbed_block_count( )
+                                        exp = 1 ).
+    DATA(lv_view) = lo_screen->stringify( ).
+    cl_abap_unit_assert=>assert_char_cp( act = lv_view
+                                         exp = `*<IconTabBar*selectedKey="{/TAB}"*` ).
+    cl_abap_unit_assert=>assert_char_cp( act = lv_view
+                                         exp = `*<IconTabFilter text="First" key="TAB1"*{/MV_TEXT}*<IconTabFilter text="Second" key="TAB2"*{/MV_DATE}*` ).
+    " tabs are no fields of LOOP AT SCREEN
+    cl_abap_unit_assert=>assert_equals( act = lines( lo_screen->loop_at_screen( ) )
+                                        exp = 2 ).
+
+  ENDMETHOD.
+
+  METHOD skip_and_uline.
+
+    DATA(lo_screen) = z2ui5_cl_cgui_selscreen=>factory( mo_client ).
+    lo_screen->parameter( mo_app->mv_text
+        )->skip( 2
+        )->uline(
+        )->parameter( mo_app->mv_date ).
+
+    DATA(lv_view) = lo_screen->stringify( ).
+    cl_abap_unit_assert=>assert_char_cp( act = lv_view
+                                         exp = `*<Toolbar height="1px" design="Solid"*` ).
+    cl_abap_unit_assert=>assert_equals( act = lines( lo_screen->loop_at_screen( ) )
+                                        exp = 2 ).
+
+  ENDMETHOD.
+
+  METHOD range_inputs.
+
+    DATA(lo_screen) = z2ui5_cl_cgui_selscreen=>factory( mo_client ).
+    lo_screen->select_option( val          = mo_app->mt_text
+                              no_extension = abap_true ).
+    lo_screen->set_select_option_input( name      = `MT_TEXT`
+                                        low_bind  = `{/SO/0/LOW}`
+                                        high_bind = `{/SO/0/HIGH}` ).
+
+    DATA(lv_view) = lo_screen->stringify( ).
+    cl_abap_unit_assert=>assert_char_cp( act = lv_view
+                                         exp = `*value="{/SO/0/LOW}"*value="{/SO/0/HIGH}"*` ).
+    " NO-EXTENSION: no button of the multiple selection
+    cl_abap_unit_assert=>assert_char_np( act = lv_view
+                                         exp = `*EVENT:CGUI_SELECT_OPTION*` ).
+
+  ENDMETHOD.
+
+  METHOD upper_case_flag.
+
+    DATA(lo_screen) = z2ui5_cl_cgui_selscreen=>factory( mo_client ).
+    lo_screen->parameter( mo_app->mv_char
+        )->parameter( val        = mo_app->mv_char2
+                      lower_case = abap_true
+        )->parameter( mo_app->mv_text ).
+
+    DATA(lt_field) = lo_screen->get_fields( ).
+    cl_abap_unit_assert=>assert_true( lt_field[ 1 ]-upper ).
+    cl_abap_unit_assert=>assert_false( lt_field[ 2 ]-upper ).
+    " a string is never converted - only character fields
+    cl_abap_unit_assert=>assert_false( lt_field[ 3 ]-upper ).
+
+  ENDMETHOD.
+
+  METHOD blocks_groups_function_keys.
+
+    DATA(lo_screen) = z2ui5_cl_cgui_selscreen=>factory( mo_client ).
+    lo_screen->block_begin( title = `Selection`
+                            name  = `b1`
+        )->parameter( val         = mo_app->mv_char
+                      value_check = abap_true
+        )->block_end(
+        )->radiobutton( val   = mo_app->mv_rb_a
+                        group = `G1`
+        )->function_key( number = 2
+                         text   = `Refresh`
+                         icon   = `sap-icon://refresh`
+        )->function_key( number = 9
+                         text   = `Ignored` ).
+
+    DATA(lt_field) = lo_screen->get_fields( ).
+    cl_abap_unit_assert=>assert_equals( act = lt_field[ name = `MV_CHAR` ]-block
+                                        exp = `B1` ).
+    cl_abap_unit_assert=>assert_true( lt_field[ name = `MV_CHAR` ]-value_check ).
+    cl_abap_unit_assert=>assert_equals( act = lt_field[ name = `MV_RB_A` ]-group
+                                        exp = `G1` ).
+    cl_abap_unit_assert=>assert_initial( lt_field[ name = `MV_RB_A` ]-block ).
+
+    DATA(lt_key) = lo_screen->get_function_keys( ).
+    cl_abap_unit_assert=>assert_equals( act = lines( lt_key )
+                                        exp = 1 ).
+    cl_abap_unit_assert=>assert_equals( act = lt_key[ 1 ]-ucomm
+                                        exp = `FC02` ).
+
+  ENDMETHOD.
+
+  METHOD help_button.
+
+    DATA(lo_screen) = z2ui5_cl_cgui_selscreen=>factory( mo_client ).
+    lo_screen->parameter( mo_app->mv_carrid
+        )->parameter( mo_app->mv_char ).
+
+    DATA(lt_field) = lo_screen->get_fields( ).
+    cl_abap_unit_assert=>assert_equals( act = lt_field[ name = `MV_CARRID` ]-dtel
+                                        exp = `S_CARR_ID` ).
+    cl_abap_unit_assert=>assert_false( lt_field[ name = `MV_CHAR` ]-help ).
+    DATA(lv_view) = lo_screen->stringify( ).
+    IF lt_field[ name = `MV_CARRID` ]-help = abap_true.
+      cl_abap_unit_assert=>assert_true( xsdbool( lv_view CS `EVENT:CGUI_HELP_REQUEST` ) ).
+    ELSE.
+      cl_abap_unit_assert=>assert_false( xsdbool( lv_view CS `EVENT:CGUI_HELP_REQUEST` ) ).
+    ENDIF.
+
+  ENDMETHOD.
+
+  METHOD screen_attributes_r10.
+
+    DATA(lo_screen) = screen( ).
+    lo_screen->comment( text      = `Label of text`
+                        for_field = `MV_TEXT` ).
+    DATA(lt_screen) = lo_screen->loop_at_screen( ).
+    LOOP AT lt_screen INTO DATA(ls_screen) WHERE name = `MV_DATE`.
+      " SCREEN-REQUIRED = 2 and SCREEN-INTENSIFIED
+      ls_screen-recommended = abap_true.
+      ls_screen-intensified = abap_true.
+      ls_screen-length      = 12.
+      lo_screen->modify_screen( ls_screen ).
+    ENDLOOP.
+
+    DATA(lv_view) = lo_screen->stringify( ).
+    cl_abap_unit_assert=>assert_char_cp( act = lv_view
+                                         exp = `*text="Date"*required="true"*design="Bold"*` ).
+    cl_abap_unit_assert=>assert_char_cp( act = lv_view
+                                         exp = `*Label of text*labelFor="cgui_f_mv_text"*` ).
+    " recommended is no required field
+    DATA(lt_field) = lo_screen->get_fields( ).
+    cl_abap_unit_assert=>assert_false( lt_field[ name = `MV_DATE` ]-obligatory ).
+
+  ENDMETHOD.
+
+  METHOD block_no_intervals_matchcode.
+
+    DATA(lo_screen) = z2ui5_cl_cgui_selscreen=>factory( mo_client ).
+    lo_screen->block_begin( title        = `Single values`
+                            no_intervals = abap_true
+        )->select_option( val            = mo_app->mt_text
+                          visible_length = 8
+                          memory_id      = `ZTX`
+        )->block_end(
+        )->select_option( mo_app->mt_flag
+        )->parameter( val       = mo_app->mv_char
+                      matchcode = `h_t001` ).
+
+    DATA(lt_field) = lo_screen->get_fields( ).
+    cl_abap_unit_assert=>assert_true( lt_field[ name = `MT_TEXT` ]-no_intervals ).
+    cl_abap_unit_assert=>assert_equals( act = lt_field[ name = `MT_TEXT` ]-memory_id
+                                        exp = `ZTX` ).
+    cl_abap_unit_assert=>assert_false( lt_field[ name = `MT_FLAG` ]-no_intervals ).
+    cl_abap_unit_assert=>assert_equals( act = lt_field[ name = `MV_CHAR` ]-matchcode
+                                        exp = `H_T001` ).
+    cl_abap_unit_assert=>assert_true( lt_field[ name = `MV_CHAR` ]-value_help ).
+
+  ENDMETHOD.
+
+  METHOD high_value_help.
+
+    DATA(lo_screen) = z2ui5_cl_cgui_selscreen=>factory( mo_client ).
+    lo_screen->select_option( val        = mo_app->mt_text
+                              value_help = abap_true ).
+    lo_screen->set_select_option_input( name      = `MT_TEXT`
+                                        low_bind  = `{/SO/0/LOW}`
+                                        high_bind = `{/SO/0/HIGH}` ).
+    DATA(lv_view) = lo_screen->stringify( ).
+    " F4 on from and on to - the second names the part
+    cl_abap_unit_assert=>assert_true( xsdbool( lv_view CS `EVENT:CGUI_VALUE_REQUEST:MT_TEXT"` ) ).
+    cl_abap_unit_assert=>assert_true( xsdbool( lv_view CS `EVENT:CGUI_VALUE_REQUEST:MT_TEXT,HIGH` ) ).
 
   ENDMETHOD.
 

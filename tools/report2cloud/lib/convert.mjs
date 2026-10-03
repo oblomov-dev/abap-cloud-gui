@@ -51,10 +51,10 @@ const DECL = new Set(["Data", "DataBegin", "DataEnd", "Type", "TypeBegin", "Type
 const REFUSED = {
   CallScreen: "CALL SCREEN - a dynpro has no counterpart in a browser app; build the screen as an abap2UI5 view or a popup",
   SetScreen: "SET SCREEN - dynpro flow logic has no counterpart",
-  CallSelectionScreen: "CALL SELECTION-SCREEN - a second selection screen is not supported (abap-cloud-gui roadmap)",
+  CallSelectionScreen: "CALL SELECTION-SCREEN - not converted; abap-cloud-gui has call_selection_screen( ) with selection_screen_dynnr( ) for the screen - port the screen and the call by hand",
   CallDialog: "CALL DIALOG - dialog modules have no counterpart",
   CallTransaction: "CALL TRANSACTION - no SAP GUI transaction can be started from a browser app (batch input with USING is no API on ABAP Cloud either); call the released API of the application instead",
-  Submit: "SUBMIT - another report cannot be started from here; convert it as well and navigate to its class with client->nav_app_call( )",
+  Submit: "SUBMIT - the report is not part of the input; convert it as well and start its class with submit( report = ... values = ... )",
   ExecSQL: "EXEC SQL - native SQL is not available on ABAP Cloud; use ABAP SQL on a released CDS view",
   Module: "MODULE - dynpro modules have no counterpart",
   Include: "INCLUDE - the include is not part of the input; inline its source into the report and convert again",
@@ -63,16 +63,15 @@ const REFUSED = {
   Get: "GET - logical database events have no counterpart; read the data with ABAP SQL",
   Reject: "REJECT - logical database statement",
   Controls: "CONTROLS - table controls and tabstrips belong to dynpros",
-  EndOfPage: "END-OF-PAGE - the list has no page footer",
   AtPF: "AT PFnn - the list has no function keys",
-  GetCursor: "GET CURSOR - the list has no cursor; a hotspot with HIDE gives the clicked line",
-  ReadLine: "READ LINE - the list cannot be read back; keep the data in an internal table",
-  ModifyLine: "MODIFY LINE - the list cannot be changed after it is written",
-  Window: "WINDOW - list windows have no counterpart",
+  GetCursor: "GET CURSOR - not converted; in at_line_selection( ) get_cursor( ) returns field, value, line and offset - port it by hand",
+  ReadLine: "READ LINE - not converted; list( )->read_line( ) / read_value( ) read the list back - port it by hand, or keep the data in an internal table",
+  ModifyLine: "MODIFY LINE - not converted; list( )->modify_line( ) changes a written line - port it by hand",
+  Window: "WINDOW - not converted; window( ) in at_line_selection( ) shows the secondary list in a dialog box - port it by hand",
   SetUserCommand: "SET USER-COMMAND - triggers no event here",
   PrintControl: "PRINT-CONTROL - printing is not supported",
   CallSubscreen: "CALL SUBSCREEN - dynpro statement",
-  SetCursor: "SET CURSOR - dynpro statement",
+  SetCursor: "SET CURSOR - not converted; set_cursor_field( ) sets the cursor on the selection screen - port it by hand",
   Local: "LOCAL - not available in methods",
   ScrollList: "SCROLL LIST - the list has no scroll position",
   Communication: "COMMUNICATION - CPI-C is obsolete",
@@ -95,8 +94,8 @@ const REFUSED = {
 const REFUSED_FUNCTIONS = {
   POPUP_TO_CONFIRM: "POPUP_TO_CONFIRM waits for the answer; in abap2UI5 the popup is asynchronous - call popup_to_confirm( question = ... ucomm = ... ) and continue in at_user_command( ) with that ucomm",
   POPUP_TO_CONFIRM_STEP: "POPUP_TO_CONFIRM_STEP waits for the answer; use popup_to_confirm( ) and at_user_command( )",
-  POPUP_TO_DECIDE: "POPUP_TO_DECIDE waits for the answer; use popup_to_confirm( ) and at_user_command( )",
-  POPUP_GET_VALUES: "POPUP_GET_VALUES waits for the input; use a popup of abap2UI5-addons/popups",
+  POPUP_TO_DECIDE: "POPUP_TO_DECIDE waits for the answer; in abap2UI5 the popup is asynchronous - call popup_to_decide( ) and continue in at_user_command( ) with popup_answer( )",
+  POPUP_GET_VALUES: "POPUP_GET_VALUES waits for the input; in abap2UI5 the popup is asynchronous - call popup_get_values( ) and continue in at_user_command( ) with popup_values( )",
   GUI_DOWNLOAD: "GUI_DOWNLOAD writes to the SAP GUI frontend; offer the file with an abap2UI5 download instead",
   GUI_UPLOAD: "GUI_UPLOAD reads from the SAP GUI frontend; use an abap2UI5 file uploader instead",
   WS_DOWNLOAD: "WS_DOWNLOAD writes to the SAP GUI frontend",
@@ -170,12 +169,24 @@ const CHAINABLE = new Set(["Clear", "Free", "Data", "DataBegin", "DataEnd", "Con
 const SCREEN_FLAGS = new Set(["active", "input", "required", "invisible"]);
 const SCREEN_FIELDS = new Set(["name", "group1", ...SCREEN_FLAGS]);
 
-// names of z2ui5_cl_cgui_report a FORM must not take as method name
-const RESERVED_METHODS = new Set(["initialization", "selection_screen", "at_selection_screen_output",
-  "at_selection_screen_on", "at_selection_screen", "start_of_selection", "at_line_selection",
-  "at_user_command", "at_value_request", "write", "list", "alv", "message", "popup_to_confirm",
-  "value_help_popup", "leave_to_selection_screen", "set_title", "set_variant", "client",
-  "z2ui5_if_app~main", "main", "top_of_page", "at_selection_screen_ucomm", "end_of_selection", "constructor"]);
+// the PUBLIC and PROTECTED methods and attributes of z2ui5_cl_cgui_report -
+// a FORM must not take one as method name, a global of the report not as
+// attribute name (methods and attributes share one namespace in a class)
+const BASE_METHODS = ["cgui_alv", "cgui_selected_rows", "cgui_salv_register", "cgui_run_in_background",
+  "initialization", "selection_screen", "at_selection_screen_output", "at_selection_screen_on",
+  "at_selection_screen", "start_of_selection", "end_of_selection", "end_of_page", "at_selection_screen_on_block",
+  "at_selection_screen_on_radio", "at_selection_screen_on_end_of", "at_selection_screen_on_help",
+  "at_selection_screen_on_exit", "top_of_page", "top_of_page_line_selection", "at_line_selection", "at_link_click",
+  "at_tree_node", "at_tree_checkbox", "at_tree_expand_no_children", "at_data_changed", "at_user_command",
+  "at_value_request", "value_request_part", "at_alv_value_request", "authority_check", "authority_check_program",
+  "selection_screen_dynnr", "after_call_selection_screen", "write", "format", "get_cursor", "lisel",
+  "set_cursor_field", "set_selscreen_status", "list", "alv", "tree", "get_selected_rows", "lsind", "message",
+  "message_t100", "messages_from_bapiret", "messages_from_log", "save_log", "popup_to_confirm", "popup_to_decide",
+  "popup_get_values", "popup_answer", "popup_values", "value_help_popup", "vrm_set_values",
+  "leave_to_selection_screen", "window", "call_selection_screen", "submit", "set_parameter_id", "get_parameter_id",
+  "set_line_count", "set_pf_status", "set_title", "set_variant", "set_variant_store", "set_background", "get_link"];
+export const RESERVED_METHODS = new Set([...BASE_METHODS, "client", "cs_ucomm", "z2ui5_if_app~main", "main",
+  "at_selection_screen_ucomm", "constructor"]);
 
 const BUILTIN_TYPES = new Set(["string", "xstring", "i", "int1", "int2", "int4", "int8", "d", "t", "f", "c", "n",
   "x", "p", "decfloat16", "decfloat34", "utclong", "abap_bool", "any", "data", "simple", "clike", "csequence",
@@ -274,6 +285,7 @@ class Converter {
     this.forms = [];
     this.locals = [];
     this.header = undefined;
+    this.lineCount = undefined;
     let current;           // the unit statements go to
     let implicit;          // statements before the first event: START-OF-SELECTION
     let pendingComments = [];
@@ -300,6 +312,13 @@ class Converter {
         const name = child(s, "ReportName");
         const msg = child(s, "MessageClass");
         this.header = { name: name ? nodeText(name) : "zreport", messageClass: msg ? uc(nodeText(msg)) : "" };
+        // LINE-COUNT n(m): n lines a page, m of them the footer of END-OF-PAGE
+        const w = words(s);
+        if (hasSeq(w, "LINE", "-", "COUNT")) {
+          const pos = s.getChildren().findIndex((c) => isToken(c) && uc(c.get().getStr()) === "COUNT");
+          const ints = s.getChildren().slice(pos + 1).filter((c) => kind(c) === "Integer").map((n) => nodeText(n));
+          if (ints.length) this.lineCount = { lines: ints[0], footer: ints.length > 1 && ints[1] !== "0", stmt: s };
+        }
         this.map(s, "the class, `INHERITING FROM z2ui5_cl_cgui_report`");
         pendingComments = [];
         continue;
@@ -399,6 +418,9 @@ class Converter {
       if (["Data", "DataBegin", "Constant", "ConstantBegin", "Parameter", "SelectOption", "Ranges", "Tables"].includes(k)) {
         if (k === "Data" && this.insideBegin(s)) continue;
         this.globalData.add(lc(name));
+        if (RESERVED_METHODS.has(lc(name))) {
+          this.refuse(s, `${uc(name)} is the name of a component of z2ui5_cl_cgui_report - a global of the report becomes an attribute of the class; rename it in the source first`);
+        }
       }
       if (["Type", "TypeBegin"].includes(k) && !this.insideBegin(s)) this.globalTypes.add(lc(name));
     }
@@ -752,6 +774,27 @@ class Converter {
       const m = /ON\s+VALUE-REQUEST\s+FOR\s+([\w/]+)(-LOW|-HIGH)?/.exec(t);
       if (m) this.valueRequest.add(lc(m[1]));
     }
+    // AT SELECTION-SCREEN ON BLOCK b - the runtime knows a block by the name
+    // block_begin( ) is given, so the blocks named there get one
+    this.onBlocks = new Set(this.events.filter((e) => e.kind === "AtSelectionScreen")
+      .map((e) => /ON\s+BLOCK\s+([\w/]+)$/.exec(uc(renderTokens(stmtTokens(e.stmt)))))
+      .filter(Boolean).map((m) => m[1]));
+    this.blocks = new Map();
+    let depth = 0;
+    const open = [];
+    for (const s of this.decls) {
+      if (kind(s) !== "SelectionScreen") continue;
+      const w = words(s);
+      if (hasSeq(w, "BEGIN", "OF", "BLOCK")) {
+        const name = uc(nodeText(child(s, "BlockName")));
+        for (const outer of open) this.blocks.get(outer).nested = true;
+        this.blocks.set(name, { depth: depth++, nested: false });
+        open.push(name);
+      } else if (hasSeq(w, "END", "OF", "BLOCK")) {
+        open.pop();
+        depth--;
+      }
+    }
     this.screenUcomm = this.decls.some((s) => (kind(s) === "Parameter" && hasSeq(words(s), "USER", "-", "COMMAND"))
       || (kind(s) === "SelectionScreen" && words(s).includes("PUSHBUTTON")));
     const ass = this.events.filter((e) => e.kind === "AtSelectionScreen" && /^AT\s+SELECTION-SCREEN$/.test(uc(renderTokens(stmtTokens(e.stmt)))));
@@ -785,6 +828,10 @@ class Converter {
     {
       const body = [];
       if (this.pool.title) body.push(`set_title( ${literal(this.pool.title)} ).`);
+      if (this.lineCount) {
+        body.push(`set_line_count( ${this.lineCount.lines} ).`);
+        this.note("REPORT ... LINE-COUNT n is set_line_count( n ) - a page holds n lines of the list besides its header and footer; the classic n counted them too");
+      }
       body.push(...screen.defaults);
       for (const e of [...byKind("LoadOfProgram"), ...byKind("Initialization")]) {
         this.map(e.stmt, "`initialization( )`");
@@ -811,8 +858,13 @@ class Converter {
       }
     }
 
-    // AT SELECTION-SCREEN ON field, ON VALUE-REQUEST, ON ... (refused)
+    // AT SELECTION-SCREEN ON field, ON VALUE-REQUEST, ON BLOCK, ON
+    // RADIOBUTTON GROUP, ON END OF, ON EXIT-COMMAND (ON HELP-REQUEST refused)
     const onField = [];
+    const onBlock = [];
+    const onRadio = [];
+    const onEndOf = [];
+    const onExit = [];
     const valueRequest = [];
     for (const e of byKind("AtSelectionScreen")) {
       const t = assText(e);
@@ -830,8 +882,39 @@ class Converter {
         }
         this.map(e.stmt, `\`at_value_request( field )\` - WHEN \`${field}\`, the field declared with value_help`);
         valueRequest.push({ field, body: this.convertBody(e.stmts, { method: "at_value_request", valueRequest: true }) });
-      } else if (/ON\s+(HELP-REQUEST|BLOCK|RADIOBUTTON\s+GROUP|END\s+OF|EXIT-COMMAND)/.test(t)) {
-        this.refuse(e.stmt, `${t.replace(/^AT\s+SELECTION-SCREEN\s+/, "AT SELECTION-SCREEN ")} - not supported by abap-cloud-gui (roadmap); check it in at_selection_screen( ) instead`);
+      } else if ((m = /ON\s+BLOCK\s+([\w/]+)$/.exec(t))) {
+        const block = m[1];
+        if (!this.blocks.has(block)) {
+          this.refuse(e.stmt, `ON BLOCK ${block} - no SELECTION-SCREEN BEGIN OF BLOCK ${block}`);
+          continue;
+        }
+        this.map(e.stmt, `\`at_selection_screen_on_block( block )\` - WHEN \`${block}\`, the name of block_begin( )`);
+        if (this.blocks.get(block).nested) this.todo(e.stmt, `ON BLOCK ${block}: the block holds another block - the runtime raises the event for the blocks that hold fields themselves, and a field of the inner block belongs to the inner one only`);
+        onBlock.push({ field: block, body: this.convertBody(e.stmts, { method: "at_selection_screen_on_block" }) });
+      } else if ((m = /ON\s+RADIOBUTTON\s+GROUP\s+([\w/]+)$/.exec(t))) {
+        const group = m[1];
+        if (!this.radioGroups?.has(group)) {
+          this.refuse(e.stmt, `ON RADIOBUTTON GROUP ${group} - no radio button of that group`);
+          continue;
+        }
+        this.map(e.stmt, `\`at_selection_screen_on_radio( group )\` - WHEN \`${group}\``);
+        onRadio.push({ field: group, body: this.convertBody(e.stmts, { method: "at_selection_screen_on_radio" }) });
+      } else if ((m = /ON\s+END\s+OF\s+([\w/]+)$/.exec(t))) {
+        const field = m[1];
+        if (!this.selectOptions?.has(lc(field))) {
+          this.refuse(e.stmt, `ON END OF ${field} - no select-option of that name`);
+          continue;
+        }
+        this.map(e.stmt, `\`at_selection_screen_on_end_of( field )\` - WHEN \`${field}\`, the multiple selection left with OK`);
+        onEndOf.push({ field, body: this.convertBody(e.stmts, { method: "at_selection_screen_on_end_of" }) });
+      } else if (/ON\s+EXIT-COMMAND$/.test(t)) {
+        this.map(e.stmt, "`at_selection_screen_on_exit( ucomm )` - Back on the selection screen");
+        if (e.stmts.some((x) => /\b(sy|sscrfields)\s*-\s*ucomm\b/i.test(renderTokens(x.getTokens())))) {
+          this.todo(e.stmt, "ON EXIT-COMMAND: ucomm is `CGUI_BACK` (cs_ucomm-back) here, not BACK, %EX or RW - check the codes the block compares");
+        }
+        onExit.push(...this.convertBody(e.stmts, { method: "at_selection_screen_on_exit", ucomm: true }));
+      } else if (/ON\s+HELP-REQUEST/.test(t)) {
+        this.refuse(e.stmt, "AT SELECTION-SCREEN ON HELP-REQUEST - at_selection_screen_on_help( ) runs from the F1 button, which a field only has when its data element has documentation; the block would never run for the other fields - port it by hand");
       } else if ((m = /ON\s+([\w/]+)$/.exec(t))) {
         const field = m[1];
         if (!this.screenField(field)) {
@@ -845,6 +928,10 @@ class Converter {
     if (onField.length) {
       methods.push({ name: "at_selection_screen_on", body: caseBody("field", onField) });
     }
+    if (onBlock.length) methods.push({ name: "at_selection_screen_on_block", body: caseBody("block", onBlock) });
+    if (onRadio.length) methods.push({ name: "at_selection_screen_on_radio", body: caseBody("group", onRadio) });
+    if (onEndOf.length) methods.push({ name: "at_selection_screen_on_end_of", body: caseBody("field", onEndOf) });
+    if (onExit.length) methods.push({ name: "at_selection_screen_on_exit", body: onExit });
 
     // AT SELECTION-SCREEN
     const ass = byKind("AtSelectionScreen", (e) => /^AT\s+SELECTION-SCREEN$/.test(assText(e)));
@@ -865,59 +952,72 @@ class Converter {
       }
     }
 
-    // TOP-OF-PAGE - written once at the start of the list and after NEW-PAGE
-    const top = byKind("TopOfPage");
-    this.topOfPage = false;
-    if (top.length) {
-      const e = top[0];
-      const words0 = uc(renderTokens(stmtTokens(e.stmt)));
-      const output = new Set(["Write", "Uline", "Skip", "NewLine", "Format", "Comment"]);
+    // TOP-OF-PAGE, TOP-OF-PAGE DURING LINE-SELECTION, END-OF-PAGE: the
+    // runtime records what the event writes once - the header when the list
+    // gets its first line, the footer after END-OF-SELECTION - and repeats
+    // it on every page (NEW-PAGE, LINE-COUNT), &PAGE& the page number. So
+    // only a fixed header or footer is converted
+    const output = new Set(["Write", "Uline", "Skip", "NewLine", "Format", "Comment"]);
+    const pageEvent = (e, what, method) => {
       const bad = e.stmts.find((s) => !output.has(kind(s)));
-      if (/DURING/.test(words0)) {
-        this.refuse(e.stmt, "TOP-OF-PAGE DURING LINE-SELECTION - secondary lists have no page header");
-      } else if (bad) {
-        this.refuse(bad, "TOP-OF-PAGE with other statements than WRITE, ULINE, SKIP, NEW-LINE and FORMAT - the list has no page header; only a fixed header is converted");
-      } else {
-        this.topOfPage = true;
-        this.map(e.stmt, "`top_of_page( )` - runs before the first line of the list, and is called after each NEW-PAGE");
-        this.todo(e.stmt, "TOP-OF-PAGE: the header is written before the first line of the list and after each NEW-PAGE - not at every page break; sy-pagno is not set");
-        methods.push({ name: "top_of_page", body: this.convertBody(e.stmts, { method: "top_of_page" }) });
+      if (bad) {
+        this.refuse(bad, `${what} with other statements than WRITE, ULINE, SKIP, NEW-LINE and FORMAT - the runtime writes the ${method === "end_of_page" ? "footer" : "header"} once and repeats it on every page; only a fixed one is converted`);
+        return false;
+      }
+      const varying = e.stmts.some((s) => kind(s) === "Write" && findAll(s, "Source").some((src) => {
+        const t = lc(nodeText(src));
+        return !/^('|`|text-|sy-(pagno|datum|uzeit|title|uname|repid|cprog|sysid|mandt|langu)$)/.test(t) && !/^\d+$/.test(t);
+      }));
+      if (varying) this.todo(e.stmt, `${what}: the ${method === "end_of_page" ? "footer" : "header"} is written once and repeated on every page - a field in it keeps the value of that moment on every page`);
+      return true;
+    };
+    {
+      const top = byKind("TopOfPage", (e) => !/DURING/.test(assText(e)));
+      if (top.length && pageEvent(top[0], "TOP-OF-PAGE", "top_of_page")) {
+        this.map(top[0].stmt, "`top_of_page( )` - the header the runtime writes above the list and repeats on every page");
+        methods.push({ name: "top_of_page", body: this.convertBody(top[0].stmts, { method: "top_of_page", page: true }) });
       }
       for (const more of top.slice(1)) this.refuse(more.stmt, "a second TOP-OF-PAGE");
+      const during = byKind("TopOfPage", (e) => /DURING/.test(assText(e)));
+      if (during.length && pageEvent(during[0], "TOP-OF-PAGE DURING LINE-SELECTION", "top_of_page_line_selection")) {
+        this.map(during[0].stmt, "`top_of_page_line_selection( )` - the header of every secondary list");
+        methods.push({ name: "top_of_page_line_selection", body: this.convertBody(during[0].stmts, { method: "top_of_page_line_selection", page: true }) });
+      }
+      for (const more of during.slice(1)) this.refuse(more.stmt, "a second TOP-OF-PAGE DURING LINE-SELECTION");
+      const eop = byKind("EndOfPage");
+      if (eop.length && !this.lineCount?.footer) {
+        // the classic event ran only when LINE-COUNT n(m) reserved m lines
+        for (const x of [eop[0].stmt, ...eop[0].stmts]) this.map(x, "dropped - END-OF-PAGE without footer lines in LINE-COUNT");
+        this.todo(eop[0].stmt, "END-OF-PAGE dropped - REPORT reserves no footer lines (LINE-COUNT n(m)), so the classic event never ran; redefine end_of_page( ) for a footer on every page");
+      } else if (eop.length && pageEvent(eop[0], "END-OF-PAGE", "end_of_page")) {
+        this.map(eop[0].stmt, "`end_of_page( )` - the footer the runtime writes at the end of every page");
+        this.todo(eop[0].stmt, "END-OF-PAGE: the runtime ends every page with the footer, the last one too - the classic event ran only when a page was full");
+        methods.push({ name: "end_of_page", body: this.convertBody(eop[0].stmts, { method: "end_of_page", page: true }) });
+      }
+      for (const more of eop.slice(1)) this.refuse(more.stmt, "a second END-OF-PAGE");
     }
 
-    // START-OF-SELECTION + END-OF-SELECTION
+    // START-OF-SELECTION + END-OF-SELECTION - the runtime runs
+    // end_of_selection( ) after start_of_selection( ), also after its RETURN
+    // (or STOP), unless an error message stopped the run
     {
       const body = [];
       const sos = byKind("StartOfSelection");
       if (sos.length || byKind("EndOfSelection").length) body.push(...this.resetGlobals());
-      // a RETURN or STOP of START-OF-SELECTION ended that block only: the
-      // runtime went on with END-OF-SELECTION, which is then a method of its
-      // own that start_of_selection( ) calls before it returns
-      this.endOfSelection = byKind("EndOfSelection").length
-        && sos.some((e) => e.stmts.some((x) => ["Return", "Stop"].includes(kind(x)))) ? [] : undefined;
       for (const e of sos) {
         if (!e.implicit) this.map(e.stmt, "`start_of_selection( )`");
         else this.map(e.stmt, "`start_of_selection( )` - statements before the first event block");
         if (body.length) body.push("");
         body.push(...this.convertBody(e.stmts, { method: "start_of_selection" }));
       }
-      for (const e of byKind("EndOfSelection")) {
-        if (this.endOfSelection) {
-          this.map(e.stmt, "private method `end_of_selection( )`, called at the end of `start_of_selection( )` and before each of its RETURNs");
-          this.endOfSelection.push(...this.convertBody(e.stmts, { method: "end_of_selection" }));
-          continue;
-        }
-        this.map(e.stmt, "appended to `start_of_selection( )`");
-        body.push("", "\" END-OF-SELECTION");
-        body.push(...this.convertBody(e.stmts, { method: "start_of_selection" }));
-      }
-      if (this.endOfSelection) {
-        body.push("", "\" END-OF-SELECTION", "end_of_selection( ).");
-        this.methodDefs.push({ name: "end_of_selection", lines: ["    METHODS end_of_selection."] });
-        this.privateMethods = [...(this.privateMethods ?? []), { name: "end_of_selection", body: this.endOfSelection }];
-      }
       if (body.length) methods.push({ name: "start_of_selection", body });
+      const eos = [];
+      for (const e of byKind("EndOfSelection")) {
+        this.map(e.stmt, "`end_of_selection( )` - the runtime runs it after `start_of_selection( )`, after its RETURN too");
+        if (eos.length) eos.push("");
+        eos.push(...this.convertBody(e.stmts, { method: "end_of_selection" }));
+      }
+      if (eos.length) methods.push({ name: "end_of_selection", body: eos });
     }
 
     // AT LINE-SELECTION: HIDE restored first, the ALV double click callback
@@ -1005,7 +1105,9 @@ class Converter {
     lines.push("");
     lines.push("  PROTECTED SECTION.");
     const order = ["initialization", "selection_screen", "at_selection_screen_output", "at_selection_screen_on",
-      "at_selection_screen", "start_of_selection", "top_of_page", "at_line_selection", "at_user_command", "at_value_request"];
+      "at_selection_screen_on_block", "at_selection_screen_on_radio", "at_selection_screen_on_end_of",
+      "at_selection_screen_on_exit", "at_selection_screen", "start_of_selection", "end_of_selection", "top_of_page",
+      "top_of_page_line_selection", "end_of_page", "at_line_selection", "at_user_command", "at_value_request"];
     methods.sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
     for (const m of methods) lines.push(`    METHODS ${m.name} REDEFINITION.`);
     lines.push("");
@@ -1051,7 +1153,6 @@ class Converter {
     }
 
     const release = this.releaseTodos(files);
-    if (screen.lowerCase) this.note("character parameters without LOWER CASE: the classic screen converted the input to upper case, the UI5 input does not - add to_upper( ) where the case matters");
     return {
       className: cls,
       programName: this.programName,
@@ -1080,8 +1181,9 @@ class Converter {
     const chain = [];       // { method, params: [{ name, value }], positional }
     const defaults = [];
     const radioGroups = new Map();
+    this.radioGroups = radioGroups;
+    this.selectOptions = new Set();
     const fieldTexts = [];
-    let lowerCase = false;
     this.screenFields = new Set();
     // three groups, in this order: what a declaration may refer to comes first
     const sections = { types: [], data: [], screen: [] };
@@ -1114,17 +1216,22 @@ class Converter {
           params.push({ name: "group", value: literal(group) });
           if (!radioGroups.has(group)) radioGroups.set(group, { first: name, defaulted: false, stmt: s });
         }
+        const listbox = hasSeq(w, "AS", "LISTBOX");
         if (w.includes("OBLIGATORY") && method === "parameter") params.push({ name: "obligatory", value: "abap_true" });
         if (this.valueRequest.has(name) && method === "parameter") params.push({ name: "value_help", value: "abap_true" });
         if (modif) params.push({ name: "modif_id", value: literal(uc(nodeText(modif))) });
-        if (ucomm && method !== "parameter") params.push({ name: "user_command", value: literal(ucomm) });
+        if (listbox && method === "parameter") params.push({ name: "as_listbox", value: "abap_true" });
+        if (ucomm && (method !== "parameter" || listbox)) params.push({ name: "user_command", value: literal(ucomm) });
         if (noDisplay) params.push({ name: "no_display", value: "abap_true" });
+        if (method === "parameter") {
+          this.fieldOptions(s, w, params);
+          if (hasSeq(w, "VALUE", "CHECK")) params.push({ name: "value_check", value: "abap_true" });
+        }
         chain.push({ method, params });
 
         heading("selection screen");
         const type = checkbox || radio ? "TYPE abap_bool" : this.parameterType(s);
         push(`DATA ${name} ${type}.`);
-        if (!checkbox && !radio && !w.includes("LOWER") && /TYPE c\b|TYPE c LENGTH|TYPE string/.test(type)) lowerCase = true;
 
         const def = after(s, "DEFAULT");
         if (def) {
@@ -1138,11 +1245,7 @@ class Converter {
         }
 
         const parts = [`attribute \`${name}\``, `\`screen->${method}( )\``];
-        if (w.includes("MATCHCODE")) this.todo(s, `MATCHCODE OBJECT of ${uc(name)}: search helps are not supported - answer F4 in at_value_request( ) with value_help_popup( )`);
-        if (hasSeq(w, "MEMORY", "ID")) this.todo(s, `MEMORY ID of ${uc(name)}: SET/GET PARAMETER is not supported - the field starts empty (or with its DEFAULT)`);
-        if (hasSeq(w, "VALUE", "CHECK")) this.todo(s, `VALUE CHECK of ${uc(name)}: the input is not checked against the value table - check it in at_selection_screen_on( )`);
-        if (hasSeq(w, "AS", "LISTBOX")) this.todo(s, `AS LISTBOX of ${uc(name)}: shown as an input with F4 - the domain's fixed values come up as standard F4`);
-        if (w.includes("VISIBLE")) this.note("VISIBLE LENGTH - the input takes the width of the form");
+        if (w.includes("MATCHCODE")) this.todo(s, `MATCHCODE OBJECT of ${uc(name)}: the runtime reads the search help through the DDIC on premise - on ABAP Cloud there is none; answer F4 in at_value_request( ) with value_help_popup( ) there`);
         this.map(s, parts.join(", "));
         continue;
       }
@@ -1150,6 +1253,7 @@ class Converter {
       if (k === "SelectOption") {
         const name = lc(nodeText(child(s, "FieldSub")));
         this.screenFields.add(name);
+        this.selectOptions.add(name);
         const forNode = after(s, "FOR");
         const forText = lc(nodeText(forNode));
         const params = [{ name: "val", value: name }];
@@ -1160,6 +1264,9 @@ class Converter {
         const modif = child(s, "Modif");
         if (modif) params.push({ name: "modif_id", value: literal(uc(nodeText(modif))) });
         if (hasSeq(w, "NO", "-", "DISPLAY")) params.push({ name: "no_display", value: "abap_true" });
+        if (hasSeq(w, "NO", "INTERVALS")) params.push({ name: "no_intervals", value: "abap_true" });
+        if (hasSeq(w, "NO", "-", "EXTENSION")) params.push({ name: "no_extension", value: "abap_true" });
+        this.fieldOptions(s, w, params);
         chain.push({ method: "select_option", params });
 
         heading("selection screen");
@@ -1184,11 +1291,7 @@ class Converter {
           const sign = signIdx >= 0 ? tokensAfter("SIGN") : "I";
           defaults.push(`${name} = VALUE #( ( sign = ${literal(sign)} option = ${literal(option)} low = ${low}${high ? ` high = ${high}` : ""} ) ).`);
         }
-        if (hasSeq(w, "NO", "INTERVALS") || hasSeq(w, "NO", "-", "EXTENSION")) {
-          this.todo(s, `NO INTERVALS / NO-EXTENSION of ${uc(name)}: the select-option offers intervals and multiple selection - check the lines in at_selection_screen_on( ) if the report relies on a single value`);
-        }
-        if (w.includes("MATCHCODE")) this.todo(s, `MATCHCODE OBJECT of ${uc(name)}: search helps are not supported - answer F4 in at_value_request( )`);
-        if (hasSeq(w, "MEMORY", "ID")) this.todo(s, `MEMORY ID of ${uc(name)}: SET/GET PARAMETER is not supported`);
+        if (w.includes("MATCHCODE")) this.todo(s, `MATCHCODE OBJECT of ${uc(name)}: the runtime reads the search help through the DDIC on premise - on ABAP Cloud there is none; answer F4 in at_value_request( ) there`);
         this.map(s, `range attribute \`${name}\`, \`screen->select_option( )\``);
         continue;
       }
@@ -1301,7 +1404,7 @@ class Converter {
       if (pub.length) pub.push("");
       pub.push(`" ${title}`, ...list);
     }
-    return { chain: renderScreenChain(chain), defaults, lowerCase };
+    return { chain: renderScreenChain(chain), defaults };
   }
 
   /** a global data object start_of_selection( ) may reset (resetGlobals) -
@@ -1368,6 +1471,27 @@ class Converter {
 
   isTables(name) {
     return this.decls.some((s) => kind(s) === "Tables" && lc(declName(s)) === name);
+  }
+
+  /** the token after the words seq of a statement: MEMORY ID car -> CAR */
+  tokenAfter(s, ...seq) {
+    const toks = stmtTokens(s).map((t) => t.getStr());
+    for (let i = 0; i + seq.length < toks.length; i++) {
+      if (seq.every((w, j) => uc(toks[i + j]) === w)) return toks[i + seq.length];
+    }
+    return undefined;
+  }
+
+  /** the options of PARAMETERS / SELECT-OPTIONS that selscreen takes as they
+   *  are: LOWER CASE, MEMORY ID, VISIBLE LENGTH, MATCHCODE OBJECT */
+  fieldOptions(s, w, params) {
+    if (w.includes("LOWER")) params.push({ name: "lower_case", value: "abap_true" });
+    const visible = this.tokenAfter(s, "VISIBLE", "LENGTH");
+    if (visible && /^\d+$/.test(visible)) params.push({ name: "visible_length", value: visible });
+    const memory = this.tokenAfter(s, "MEMORY", "ID");
+    if (memory) params.push({ name: "memory_id", value: literal(uc(memory)) });
+    const matchcode = this.tokenAfter(s, "MATCHCODE", "OBJECT");
+    if (matchcode) params.push({ name: "matchcode", value: literal(uc(matchcode)) });
   }
 
   userCommand(s) {
@@ -1454,8 +1578,20 @@ class Converter {
     if (hasSeq(w, "BEGIN", "OF", "BLOCK")) {
       let title;
       if (w.includes("TITLE")) title = textOf(textElement) ?? (inline ? fieldText(undefined) : undefined);
-      chain.push({ method: "block_begin", params: title ? [{ value: title }] : [], positional: true });
-      if (hasSeq(w, "NO", "INTERVALS")) this.note("SELECTION-SCREEN BEGIN OF BLOCK ... NO INTERVALS - select-options show both fields");
+      const blockName = uc(nodeText(child(s, "BlockName")));
+      if (this.onBlocks.has(blockName)) {
+        chain.push({ method: "block_begin", params: [...(title ? [{ name: "title", value: title }] : []), { name: "name", value: literal(blockName) }] });
+      } else {
+        chain.push({ method: "block_begin", params: title ? [{ value: title }] : [], positional: true });
+      }
+      if (hasSeq(w, "NO", "INTERVALS")) {
+        const last = chain[chain.length - 1];
+        if (last.positional) {
+          last.params = last.params.map((p) => ({ name: "title", value: p.value }));
+          last.positional = false;
+        }
+        last.params.push({ name: "no_intervals", value: "abap_true" });
+      }
       this.map(s, "`screen->block_begin( )`");
     } else if (hasSeq(w, "END", "OF", "BLOCK")) {
       chain.push({ method: "block_end", params: [] });
@@ -1493,11 +1629,11 @@ class Converter {
       this.map(s, "dropped - the selection screen has no blank lines, lines or positions");
       this.note("SELECTION-SCREEN SKIP / ULINE / POSITION - the form lays out the fields by itself");
     } else if (hasSeq(w, "FUNCTION", "KEY")) {
-      this.refuse(s, "SELECTION-SCREEN FUNCTION KEY - the selection screen has no toolbar functions; use a PUSHBUTTON (screen->button( ))");
+      this.refuse(s, "SELECTION-SCREEN FUNCTION KEY - not converted; screen->function_key( ) adds the button to the toolbar - port it by hand");
     } else if (hasSeq(w, "BEGIN", "OF", "SCREEN") || hasSeq(w, "END", "OF", "SCREEN")) {
-      this.refuse(s, "SELECTION-SCREEN BEGIN OF SCREEN - only the standard selection screen is converted");
+      this.refuse(s, "SELECTION-SCREEN BEGIN OF SCREEN - only the standard selection screen is converted; a screen of its own is selection_screen_dynnr( ) with call_selection_screen( ) - port it by hand");
     } else if (w.includes("TABBED") || w.includes("TAB")) {
-      this.refuse(s, "SELECTION-SCREEN TABBED BLOCK / TAB - tabstrips on the selection screen are not supported");
+      this.refuse(s, "SELECTION-SCREEN TABBED BLOCK / TAB - tabstrips are not converted; the selection screen of abap-cloud-gui has tabbed blocks - port them by hand");
     } else if (w.includes("INCLUDE")) {
       this.refuse(s, "SELECTION-SCREEN INCLUDE - the included selection screen is not part of the input");
     } else if (w.includes("DYNAMIC")) {
@@ -1872,10 +2008,19 @@ class Converter {
           this.refuse(s, "NEW-PAGE PRINT ON - printing is not supported");
           return;
         }
-        if (w.length > 3) this.note("NEW-PAGE options (NO-TITLE, LINE-SIZE, ...) - the page is a heading line of the list");
-        this.listCall(b, "new_page", []);
-        if (this.topOfPage) out.push("top_of_page( ).");
-        this.map(s, "`list( )->new_page( )`");
+        // the options as words: NO-HEADING, LINE-COUNT 20, ...
+        const opts = w.slice(3).join(" ").replace(/ - /g, "-").split(" ").filter(Boolean);
+        const params = [];
+        if (opts.includes("NO-HEADING")) params.push({ name: "no_heading", value: "abap_true" });
+        const count = child(s, "Source");
+        if (opts.includes("LINE-COUNT") && count) params.push({ name: "line_count", value: nodeText(count, this.rewrites(s, b.ctx)) });
+        if (opts.some((x) => !["NO-HEADING", "WITH-HEADING", "LINE-COUNT"].includes(x))) {
+          this.note("NEW-PAGE options other than NO-HEADING and LINE-COUNT (NO-TITLE, LINE-SIZE, ...) - dropped");
+        }
+        this.listCall(b, "new_page", params);
+        this.map(s, this.events.some((e) => e.kind === "TopOfPage") && !params.some((p) => p.name === "no_heading")
+          ? "`list( )->new_page( )` - the runtime repeats the TOP-OF-PAGE header on the new page"
+          : "`list( )->new_page( )`");
         return;
       }
       case "Format":
@@ -1943,7 +2088,7 @@ class Converter {
         }
         break;
       case "SetPFStatus":
-        this.todo(s, "SET PF-STATUS dropped - the list has no GUI status; offer the functions as buttons of the selection screen or popups");
+        this.todo(s, "SET PF-STATUS dropped - the GUI status is not part of the input; set_pf_status( functions = ... ) adds its functions to the toolbar of the output, each arrives in at_user_command( )");
         this.map(s, "dropped - SET PF-STATUS");
         return;
       case "SetTitlebar":
@@ -1966,21 +2111,18 @@ class Converter {
         return;
       }
       case "Stop":
-        if (b.ctx.method === "start_of_selection" && this.endOfSelection) {
-          out.push("end_of_selection( ).", "RETURN.");
-          this.map(s, "`end_of_selection( )` and `RETURN` - STOP went on with END-OF-SELECTION");
+        // STOP ended START-OF-SELECTION and went on with END-OF-SELECTION -
+        // as the runtime does after start_of_selection( ) returns
+        out.push("RETURN.");
+        if (b.ctx.method === "start_of_selection" || b.ctx.method === "end_of_selection") {
+          this.map(s, "`RETURN` - the runtime goes on with `end_of_selection( )`, as after STOP");
           return;
         }
-        out.push("RETURN.");
-        this.todo(s, this.endOfSelection
-          ? "STOP became RETURN - in a FORM it only leaves the method; the classic STOP ended START-OF-SELECTION and went on with END-OF-SELECTION (end_of_selection( ))"
+        this.todo(s, b.ctx.form
+          ? `STOP became RETURN - in FORM ${b.ctx.form.name} it only leaves ${b.ctx.form.method}( ); the classic STOP ended START-OF-SELECTION and went on with END-OF-SELECTION`
           : "STOP became RETURN - it leaves the method, the classic STOP ended the event block");
         this.map(s, "`RETURN`");
         return;
-      case "Return":
-        // RETURN ended START-OF-SELECTION - END-OF-SELECTION still ran
-        if (b.ctx.method === "start_of_selection" && this.endOfSelection) out.push("end_of_selection( ).");
-        break;
       case "CallFunction":
         if (this.callFunction(s, b)) return;
         break;
@@ -2233,7 +2375,16 @@ class Converter {
         ov.set(key(toks[i + 2]), null);
       }
       if (ctx.lineSelection && t === "sy" && next === "-" && next2 === "lisel") {
-        this.todo(s, "sy-lisel (the text of the clicked line) is not set - read the data of the line through HIDE or row instead");
+        ov.set(key(toks[i]), "lisel( )");
+        ov.set(key(toks[i + 1]), null);
+        ov.set(key(toks[i + 2]), null);
+      }
+      if (t === "sy" && next === "-" && next2 === "pagno") {
+        // the header and footer are written once - &PAGE& is the number of
+        // the page they stand on
+        ov.set(key(toks[i]), ctx.page ? "z2ui5_cl_cgui_list=>cv_page" : "list( )->current_page( )");
+        ov.set(key(toks[i + 1]), null);
+        ov.set(key(toks[i + 2]), null);
       }
       if (b && this.headerTables.has(t) && !this.currentLocals.has(t)) {
         if (next === "-") ov.set(key(toks[i]), this.useWa(b.ctx.method, t));
@@ -2391,7 +2542,7 @@ class Converter {
   // ----------------------------------------------------------------- list
 
   listCall(b, method, params) {
-    const item = { method, params, positional: true };
+    const item = { method, params, positional: !params.some((p) => p.name) };
     b.out.push({ items: [item] });
     if (method !== "write") b.line = [];
   }

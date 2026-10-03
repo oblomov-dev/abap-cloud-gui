@@ -15,7 +15,7 @@ These statements have no counterpart in an abap-cloud-gui report. Rewrite them i
 
 - `zr2c_10_refused.prog.abap:26:3` - ASSIGN of a field of another program ('(PROG)FIELD') - field symbols to screen or foreign program fields are not available in a class or on ABAP Cloud
 - `zr2c_10_refused.prog.abap:28:3` - CALL TRANSACTION - no SAP GUI transaction can be started from a browser app (batch input with USING is no API on ABAP Cloud either); call the released API of the application instead
-- `zr2c_10_refused.prog.abap:30:3` - SUBMIT - another report cannot be started from here; convert it as well and navigate to its class with client->nav_app_call( )
+- `zr2c_10_refused.prog.abap:30:3` - SUBMIT - the report is not part of the input; convert it as well and start its class with submit( report = ... values = ... )
 - `zr2c_10_refused.prog.abap:32:3` - EXEC SQL - native SQL is not available on ABAP Cloud; use ABAP SQL on a released CDS view
 - `zr2c_10_refused.prog.abap:36:3` - CALL SCREEN - a dynpro has no counterpart in a browser app; build the screen as an abap2UI5 view or a popup
 - `zr2c_10_refused.prog.abap:38:1` - MODULE - dynpro modules have no counterpart
@@ -28,12 +28,6 @@ These statements have no counterpart in an abap-cloud-gui report. Rewrite them i
 ## Release state on ABAP Cloud
 
 The class uses no database table, DDIC type, function module, class or message class outside of abap2UI5 and this addon.
-
-## Not carried over
-
-Layout, formatting and behaviour of the classic report that the list, the ALV or the selection screen of abap-cloud-gui do not have:
-
-- character parameters without LOWER CASE: the classic screen converted the input to upper case, the UI5 input does not - add to_upper( ) where the case matters
 
 ## Mapped
 

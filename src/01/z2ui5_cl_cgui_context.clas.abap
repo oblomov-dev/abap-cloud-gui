@@ -15,6 +15,12 @@ CLASS z2ui5_cl_cgui_context DEFINITION PUBLIC FINAL CREATE PUBLIC.
         name      TYPE string,
         label     TYPE string,
         type_kind TYPE string,
+        " the decimals of a packed number, the output length of the type
+        " and whether it is an ABAP boolean - what the ALV formats a
+        " column with
+        decimals  TYPE i,
+        length    TYPE i,
+        boolean   TYPE abap_bool,
       END OF ty_s_comp.
     TYPES ty_t_comp TYPE STANDARD TABLE OF ty_s_comp WITH EMPTY KEY.
 
@@ -26,9 +32,9 @@ CLASS z2ui5_cl_cgui_context DEFINITION PUBLIC FINAL CREATE PUBLIC.
       END OF ty_s_fix_val.
     TYPES ty_t_fix_val TYPE STANDARD TABLE OF ty_s_fix_val WITH EMPTY KEY.
 
+    "! the value table of a domain: the table, its key field with the
+    "! domain, and the fields worth showing - every field but the client
     TYPES:
-      "! the value table of a domain: the table, its key field with the
-      "! domain, and the fields worth showing - every field but the client
       BEGIN OF ty_s_value_table,
         table  TYPE string,
         field  TYPE string,
@@ -56,6 +62,47 @@ CLASS z2ui5_cl_cgui_context DEFINITION PUBLIC FINAL CREATE PUBLIC.
     CLASS-METHODS rtti_check_boolean
       IMPORTING
         val           TYPE any
+      RETURNING
+        VALUE(result) TYPE abap_bool.
+
+    "! is the type an ABAP boolean (ABAP_BOOL, XSDBOOLEAN, BOOLE_D, ...)
+    "! the elementary search help of a data element - name and the field
+    "! of the search help the value is taken from; empty when there is
+    "! none (and always on ABAP Cloud)
+    TYPES:
+      BEGIN OF ty_s_search_help,
+        name  TYPE string,
+        field TYPE string,
+      END OF ty_s_search_help.
+
+    CLASS-METHODS rtti_get_search_help
+      IMPORTING
+        descr         TYPE REF TO cl_abap_typedescr
+      RETURNING
+        VALUE(result) TYPE ty_s_search_help.
+
+    "! the hit list of search help help, its list fields as columns - read
+    "! without a dialog by F4IF_SELECT_VALUES; unbound when it cannot be
+    "! read
+    CLASS-METHODS search_help_select
+      IMPORTING
+        help          TYPE ty_s_search_help
+        max           TYPE i DEFAULT 500
+      RETURNING
+        VALUE(result) TYPE REF TO data.
+
+    "! the rows of value table table with the text of its text table in
+    "! the logon language as last column - unbound when it cannot be read
+    CLASS-METHODS value_table_select
+      IMPORTING
+        table         TYPE ty_s_value_table
+        max           TYPE i DEFAULT 500
+      RETURNING
+        VALUE(result) TYPE REF TO data.
+
+    CLASS-METHODS rtti_check_boolean_descr
+      IMPORTING
+        descr         TYPE REF TO cl_abap_typedescr
       RETURNING
         VALUE(result) TYPE abap_bool.
 
@@ -139,6 +186,38 @@ CLASS z2ui5_cl_cgui_context DEFINITION PUBLIC FINAL CREATE PUBLIC.
     CLASS-METHODS rtti_check_value_help
       IMPORTING
         descr         TYPE REF TO cl_abap_typedescr
+      RETURNING
+        VALUE(result) TYPE abap_bool.
+
+    "! the data element a value (or the LOW of a range) is typed with -
+    "! empty for a built-in or local type
+    CLASS-METHODS rtti_get_dtel_name
+      IMPORTING
+        val           TYPE any
+      RETURNING
+        VALUE(result) TYPE string.
+
+    "! has the data element documentation (F1) - on premise
+    CLASS-METHODS dtel_docu_check
+      IMPORTING
+        name          TYPE clike
+      RETURNING
+        VALUE(result) TYPE abap_bool.
+
+    "! the documentation of the data element as paragraphs of plain text -
+    "! the SAPscript formatting dropped; in the logon language, else English
+    CLASS-METHODS dtel_docu_read
+      IMPORTING
+        name          TYPE clike
+      RETURNING
+        VALUE(result) TYPE string_table.
+
+    "! VALUE CHECK - is val one of the fixed values of its domain or a key
+    "! of its value table. abap_true too when there is nothing to check
+    "! against, or val is initial
+    CLASS-METHODS value_check
+      IMPORTING
+        val           TYPE any
       RETURNING
         VALUE(result) TYPE abap_bool.
 
@@ -248,12 +327,17 @@ CLASS z2ui5_cl_cgui_context IMPLEMENTATION.
 
   METHOD rtti_check_boolean.
 
-    DATA(lo_descr) = cl_abap_typedescr=>describe_by_data( val ).
-    IF lo_descr->kind <> cl_abap_typedescr=>kind_elem.
+    result = rtti_check_boolean_descr( cl_abap_typedescr=>describe_by_data( val ) ).
+
+  ENDMETHOD.
+
+  METHOD rtti_check_boolean_descr.
+
+    IF descr IS NOT BOUND OR descr->kind <> cl_abap_typedescr=>kind_elem.
       RETURN.
     ENDIF.
 
-    CASE lo_descr->absolute_name.
+    CASE descr->absolute_name.
       WHEN `\TYPE-POOL=ABAP\TYPE=ABAP_BOOL`
           OR `\TYPE=ABAP_BOOL`
           OR `\TYPE=ABAP_BOOLEAN`
@@ -296,9 +380,13 @@ CLASS z2ui5_cl_cgui_context IMPLEMENTATION.
         lv_label = lv_name.
       ENDIF.
 
+      DATA(lo_elem) = CAST cl_abap_elemdescr( lo_comp ).
       INSERT VALUE #( name      = lv_name
                       label     = lv_label
-                      type_kind = lr_comp->type_kind ) INTO TABLE result.
+                      type_kind = lr_comp->type_kind
+                      decimals  = lo_elem->decimals
+                      length    = lo_elem->output_length
+                      boolean   = rtti_check_boolean_descr( lo_comp ) ) INTO TABLE result.
     ENDLOOP.
 
   ENDMETHOD.
@@ -626,9 +714,298 @@ CLASS z2ui5_cl_cgui_context IMPLEMENTATION.
 
   ENDMETHOD.
 
+  METHOD rtti_get_search_help.
+
+    DATA lv_name  TYPE c LENGTH 30.
+    DATA lv_shlp  TYPE c LENGTH 30.
+    DATA lv_field TYPE c LENGTH 30.
+
+    IF descr IS NOT BOUND OR descr->kind <> cl_abap_typedescr=>kind_elem.
+      RETURN.
+    ENDIF.
+
+    TRY.
+        IF descr->is_ddic_type( ) = abap_false.
+          RETURN.
+        ENDIF.
+        lv_name = descr->get_relative_name( ).
+        " DD04L is not released on ABAP Cloud - there the select raises and
+        " the field has no search help
+        DATA(lv_dd04l) = `DD04L`.
+        SELECT SINGLE shlpname, shlpfield FROM (lv_dd04l)
+          WHERE rollname = @lv_name AND as4local = 'A'
+          INTO (@lv_shlp, @lv_field).
+        IF sy-subrc = 0 AND lv_shlp IS NOT INITIAL AND lv_field IS NOT INITIAL.
+          result-name  = lv_shlp.
+          result-field = lv_field.
+        ENDIF.
+      CATCH cx_root.
+        CLEAR result.
+    ENDTRY.
+
+  ENDMETHOD.
+
+  METHOD search_help_select.
+
+    " F4IF_GET_SHLP_DESCR, F4IF_EXPAND_SEARCHHELP and F4IF_SELECT_VALUES and
+    " their types are named as strings: on ABAP Cloud they do not exist,
+    " the select ends in the CATCH and the field keeps its other F4
+    DATA lr_shlp   TYPE REF TO data.
+    DATA lr_shlps  TYPE REF TO data.
+    DATA lr_return TYPE REF TO data.
+    DATA lt_comp   TYPE cl_abap_structdescr=>component_table.
+    DATA lt_field  TYPE string_table.
+    DATA lr_row    TYPE REF TO data.
+    DATA lv_pos    TYPE i.
+    DATA lv_last   TYPE i.
+    DATA lo_type   TYPE REF TO cl_abap_datadescr.
+    FIELD-SYMBOLS <shlp>   TYPE any.
+    FIELD-SYMBOLS <shlps>  TYPE STANDARD TABLE.
+    FIELD-SYMBOLS <return> TYPE STANDARD TABLE.
+    FIELD-SYMBOLS <props>  TYPE STANDARD TABLE.
+    FIELD-SYMBOLS <descrs> TYPE STANDARD TABLE.
+    FIELD-SYMBOLS <comp>   TYPE any.
+    FIELD-SYMBOLS <tab>    TYPE STANDARD TABLE.
+    FIELD-SYMBOLS <row>    TYPE any.
+    FIELD-SYMBOLS <cell>   TYPE any.
+
+    IF help-name IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    TRY.
+        DATA(lo_shlp) = CAST cl_abap_datadescr( cl_abap_typedescr=>describe_by_name( `SHLP_DESCR` ) ).
+        CREATE DATA lr_shlp TYPE HANDLE lo_shlp.
+        ASSIGN lr_shlp->* TO <shlp>.
+        DATA(lo_shlps) = CAST cl_abap_datadescr( cl_abap_typedescr=>describe_by_name( `SHLP_DESCT` ) ).
+        CREATE DATA lr_shlps TYPE HANDLE lo_shlps.
+        ASSIGN lr_shlps->* TO <shlps>.
+        DATA(lo_return) = cl_abap_tabledescr=>create(
+            CAST cl_abap_datadescr( cl_abap_typedescr=>describe_by_name( `DDSHRETVAL` ) ) ).
+        CREATE DATA lr_return TYPE HANDLE lo_return.
+        ASSIGN lr_return->* TO <return>.
+
+        DATA(lv_name) = CONV char30( help-name ).
+        CALL FUNCTION 'F4IF_GET_SHLP_DESCR'
+          EXPORTING
+            shlpname = lv_name
+          IMPORTING
+            shlp     = <shlp>.
+
+        " a collective search help: its first elementary one
+        ASSIGN COMPONENT `SHLPTYPE` OF STRUCTURE <shlp> TO <comp>.
+        IF sy-subrc = 0 AND <comp> = 'SC'.
+          CALL FUNCTION 'F4IF_EXPAND_SEARCHHELP'
+            EXPORTING
+              shlp_top = <shlp>
+            IMPORTING
+              shlp_tab = <shlps>.
+          IF <shlps> IS INITIAL.
+            RETURN.
+          ENDIF.
+          READ TABLE <shlps> ASSIGNING FIELD-SYMBOL(<first>) INDEX 1.
+          <shlp> = <first>.
+        ENDIF.
+
+        " every list field - and the field the value is taken from - is an
+        " output field, so that the hit list returns it
+        ASSIGN COMPONENT `FIELDPROP` OF STRUCTURE <shlp> TO <props>.
+        ASSIGN COMPONENT `FIELDDESCR` OF STRUCTURE <shlp> TO <descrs>.
+        LOOP AT <props> ASSIGNING FIELD-SYMBOL(<prop>).
+          ASSIGN COMPONENT `FIELDNAME` OF STRUCTURE <prop> TO <comp>.
+          DATA(lv_field) = CONV string( <comp> ).
+          ASSIGN COMPONENT `SHLPLISPOS` OF STRUCTURE <prop> TO <comp>.
+          lv_pos = <comp>.
+          IF lv_pos = 0 AND lv_field <> help-field.
+            CONTINUE.
+          ENDIF.
+          ASSIGN COMPONENT `SHLPOUTPUT` OF STRUCTURE <prop> TO <comp>.
+          <comp> = abap_true.
+          IF lv_field = help-field.
+            INSERT lv_field INTO lt_field INDEX 1.
+          ELSE.
+            INSERT lv_field INTO TABLE lt_field.
+          ENDIF.
+        ENDLOOP.
+        IF lt_field IS INITIAL.
+          RETURN.
+        ENDIF.
+
+        CALL FUNCTION 'F4IF_SELECT_VALUES'
+          EXPORTING
+            shlp           = <shlp>
+            maxrows        = max
+            sort           = abap_true
+            call_shlp_exit = abap_true
+          TABLES
+            return_tab     = <return>.
+
+        " the columns typed by the data elements of the search help
+        LOOP AT lt_field INTO lv_field.
+          CLEAR lo_type.
+          LOOP AT <descrs> ASSIGNING FIELD-SYMBOL(<fd>).
+            ASSIGN COMPONENT `FIELDNAME` OF STRUCTURE <fd> TO <comp>.
+            IF <comp> <> lv_field.
+              CONTINUE.
+            ENDIF.
+            ASSIGN COMPONENT `ROLLNAME` OF STRUCTURE <fd> TO <comp>.
+            TRY.
+                lo_type ?= cl_abap_typedescr=>describe_by_name( <comp> ).
+                IF lo_type->kind <> cl_abap_typedescr=>kind_elem.
+                  CLEAR lo_type.
+                ENDIF.
+              CATCH cx_root.
+                CLEAR lo_type.
+            ENDTRY.
+            EXIT.
+          ENDLOOP.
+          IF lo_type IS NOT BOUND.
+            lo_type = cl_abap_elemdescr=>get_string( ).
+          ENDIF.
+          INSERT VALUE #( name = lv_field
+                          type = lo_type ) INTO TABLE lt_comp.
+        ENDLOOP.
+
+        DATA(lo_tab) = cl_abap_tabledescr=>create( cl_abap_structdescr=>create( lt_comp ) ).
+        CREATE DATA result TYPE HANDLE lo_tab.
+        ASSIGN result->* TO <tab>.
+
+        " one line of DDSHRETVAL per field and hit, the hit is RECORDPOS
+        LOOP AT <return> ASSIGNING FIELD-SYMBOL(<ret>).
+          ASSIGN COMPONENT `RECORDPOS` OF STRUCTURE <ret> TO <comp>.
+          lv_pos = <comp>.
+          IF lv_pos <> lv_last.
+            IF <row> IS ASSIGNED.
+              INSERT <row> INTO TABLE <tab>.
+            ENDIF.
+            CREATE DATA lr_row LIKE LINE OF <tab>.
+            ASSIGN lr_row->* TO <row>.
+            lv_last = lv_pos.
+          ENDIF.
+          ASSIGN COMPONENT `FIELDNAME` OF STRUCTURE <ret> TO <comp>.
+          ASSIGN COMPONENT <comp> OF STRUCTURE <row> TO <cell>.
+          IF sy-subrc = 0.
+            ASSIGN COMPONENT `FIELDVAL` OF STRUCTURE <ret> TO <comp>.
+            TRY.
+                <cell> = <comp>.
+              CATCH cx_root ##NO_HANDLER.
+            ENDTRY.
+          ENDIF.
+        ENDLOOP.
+        IF <row> IS ASSIGNED.
+          INSERT <row> INTO TABLE <tab>.
+        ENDIF.
+
+      CATCH cx_root.
+        CLEAR result.
+    ENDTRY.
+
+  ENDMETHOD.
+
+  METHOD value_table_select.
+
+    DATA lt_comp TYPE cl_abap_structdescr=>component_table.
+    DATA lr_text TYPE REF TO data.
+    DATA lv_text_table TYPE c LENGTH 30.
+    DATA lv_lang_field TYPE string.
+    DATA lv_key_field  TYPE string.
+    DATA lv_text_field TYPE string.
+    FIELD-SYMBOLS <tab>   TYPE STANDARD TABLE.
+    FIELD-SYMBOLS <texts> TYPE STANDARD TABLE.
+    FIELD-SYMBOLS <row>   TYPE any.
+    FIELD-SYMBOLS <key>   TYPE any.
+    FIELD-SYMBOLS <cell>  TYPE any.
+    FIELD-SYMBOLS <tkey>  TYPE any.
+    FIELD-SYMBOLS <ttext> TYPE any.
+
+    IF table-table IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    TRY.
+        DATA(lo_struct) = CAST cl_abap_structdescr( cl_abap_typedescr=>describe_by_name( table-table ) ).
+        LOOP AT lo_struct->get_components( ) REFERENCE INTO DATA(lr_comp).
+          IF line_exists( table-fields[ table_line = lr_comp->name ] ).
+            INSERT lr_comp->* INTO TABLE lt_comp.
+          ENDIF.
+        ENDLOOP.
+
+        " the text table: DD08L knows it as the table with a TEXT foreign
+        " key to the value table - not released on ABAP Cloud
+        TRY.
+            DATA(lv_dd08l) = `DD08L`.
+            DATA(lv_check) = CONV char30( table-table ).
+            SELECT SINGLE tabname FROM (lv_dd08l)
+              WHERE checktable = @lv_check AND frkart = 'TEXT' AND as4local = 'A'
+              INTO @lv_text_table.
+            IF sy-subrc = 0.
+              DATA(lo_text) = CAST cl_abap_structdescr( cl_abap_typedescr=>describe_by_name( lv_text_table ) ).
+              LOOP AT lo_text->get_components( ) REFERENCE INTO DATA(lr_tcomp).
+                DATA(lo_tcomp) = lr_tcomp->type.
+                IF lo_tcomp->type_kind = cl_abap_typedescr=>typekind_char
+                    AND CAST cl_abap_elemdescr( lo_tcomp )->get_relative_name( ) = `SPRAS`.
+                  lv_lang_field = lr_tcomp->name.
+                ELSEIF lr_tcomp->name = table-field.
+                  lv_key_field = lr_tcomp->name.
+                ELSEIF lv_text_field IS INITIAL AND lv_lang_field IS NOT INITIAL AND lv_key_field IS NOT INITIAL
+                    AND lo_tcomp->type_kind = cl_abap_typedescr=>typekind_char
+                    AND CAST cl_abap_elemdescr( lo_tcomp )->output_length >= 10
+                    AND NOT line_exists( lt_comp[ name = lr_tcomp->name ] ).
+                  lv_text_field = lr_tcomp->name.
+                  INSERT VALUE #( name = lr_tcomp->name
+                                  type = lr_tcomp->type ) INTO TABLE lt_comp.
+                ENDIF.
+              ENDLOOP.
+            ENDIF.
+          CATCH cx_root.
+            CLEAR: lv_text_field, lv_lang_field, lv_key_field.
+        ENDTRY.
+
+        DATA(lo_tab) = cl_abap_tabledescr=>create( cl_abap_structdescr=>create( lt_comp ) ).
+        CREATE DATA result TYPE HANDLE lo_tab.
+        ASSIGN result->* TO <tab>.
+        SELECT (table-fields) FROM (table-table) INTO CORRESPONDING FIELDS OF TABLE @<tab> UP TO @max ROWS.
+
+        IF lv_text_field IS INITIAL OR <tab> IS INITIAL.
+          RETURN.
+        ENDIF.
+
+        DATA(lo_text_tab) = cl_abap_tabledescr=>create( cl_abap_structdescr=>create(
+            VALUE #( ( name = lv_key_field  type = CAST #( lo_text->get_component_type( lv_key_field ) ) )
+                     ( name = lv_text_field type = CAST #( lo_text->get_component_type( lv_text_field ) ) ) ) ) ).
+        CREATE DATA lr_text TYPE HANDLE lo_text_tab.
+        ASSIGN lr_text->* TO <texts>.
+        DATA(lt_fields) = VALUE string_table( ( lv_key_field ) ( lv_text_field ) ).
+        DATA(lv_where) = |{ lv_lang_field } = '{ cl_abap_context_info=>get_user_language_abap_format( ) }'|.
+        SELECT (lt_fields) FROM (lv_text_table) WHERE (lv_where) INTO CORRESPONDING FIELDS OF TABLE @<texts>.
+
+        LOOP AT <tab> ASSIGNING <row>.
+          ASSIGN COMPONENT table-field OF STRUCTURE <row> TO <key>.
+          ASSIGN COMPONENT lv_text_field OF STRUCTURE <row> TO <cell>.
+          LOOP AT <texts> ASSIGNING FIELD-SYMBOL(<text>).
+            ASSIGN COMPONENT lv_key_field OF STRUCTURE <text> TO <tkey>.
+            IF <tkey> = <key>.
+              ASSIGN COMPONENT lv_text_field OF STRUCTURE <text> TO <ttext>.
+              <cell> = <ttext>.
+              EXIT.
+            ENDIF.
+          ENDLOOP.
+        ENDLOOP.
+
+      CATCH cx_root.
+        CLEAR result.
+    ENDTRY.
+
+  ENDMETHOD.
+
   METHOD rtti_check_value_help.
 
     IF rtti_get_fixed_values( descr ) IS NOT INITIAL.
+      result = abap_true.
+      RETURN.
+    ENDIF.
+
+    IF rtti_get_search_help( descr )-name IS NOT INITIAL.
       result = abap_true.
       RETURN.
     ENDIF.
@@ -768,6 +1145,138 @@ CLASS z2ui5_cl_cgui_context IMPLEMENTATION.
 
       CATCH cx_root.
         do_fallback = abap_true.
+    ENDTRY.
+
+  ENDMETHOD.
+
+  METHOD rtti_get_dtel_name.
+
+    DATA(lo_descr) = rtti_get_value_descr( val ).
+    IF lo_descr IS NOT BOUND OR lo_descr->kind <> cl_abap_typedescr=>kind_elem
+        OR lo_descr->is_ddic_type( ) = abap_false OR lo_descr->absolute_name CS `\TYPE-POOL=`.
+      RETURN.
+    ENDIF.
+    result = substring_after( val = lo_descr->absolute_name
+                              sub = `\TYPE=` ).
+
+  ENDMETHOD.
+
+  METHOD dtel_docu_check.
+
+    DATA lv_object TYPE c LENGTH 60.
+
+    IF name IS INITIAL.
+      RETURN.
+    ENDIF.
+    lv_object = to_upper( name ).
+    TRY.
+        DATA(lv_table) = `DOKIL`.
+        SELECT SINGLE @abap_true FROM (lv_table)
+          WHERE id = 'DE' AND object = @lv_object AND typ = 'E'
+          INTO @result.
+      CATCH cx_root.
+        CLEAR result.
+    ENDTRY.
+
+  ENDMETHOD.
+
+  METHOD dtel_docu_read.
+
+    TYPES:
+      BEGIN OF ty_s_line,
+        tdformat TYPE c LENGTH 2,
+        tdline   TYPE c LENGTH 132,
+      END OF ty_s_line.
+    DATA lt_line   TYPE STANDARD TABLE OF ty_s_line WITH EMPTY KEY.
+    DATA lv_object TYPE c LENGTH 60.
+    DATA lv_text   TYPE string.
+
+    IF name IS INITIAL.
+      RETURN.
+    ENDIF.
+    lv_object = to_upper( name ).
+
+    DATA(lv_function) = `DOCU_GET`.
+    DO 2 TIMES.
+      DATA(lv_langu) = COND sy-langu( WHEN sy-index = 1 THEN sy-langu ELSE 'E' ).
+      CLEAR lt_line.
+      TRY.
+          CALL FUNCTION lv_function
+            EXPORTING
+              id     = 'DE'
+              langu  = lv_langu
+              object = lv_object
+            TABLES
+              line   = lt_line
+            EXCEPTIONS
+              OTHERS = 1.
+          IF sy-subrc = 0 AND lt_line IS NOT INITIAL.
+            EXIT.
+          ENDIF.
+        CATCH cx_root.
+          RETURN.
+      ENDTRY.
+    ENDDO.
+
+    " a paragraph format (anything but the continuation '=' or ' ') starts
+    " a new paragraph; tags <..>, symbols &..& and the headings of the
+    " standard template go
+    LOOP AT lt_line INTO DATA(ls_line).
+      DATA(lv_part) = replace( val = CONV string( ls_line-tdline ) pcre = `<[^>]*>` with = `` occ = 0 ).
+      lv_part = replace( val = lv_part pcre = `&[A-Z_0-9]+&` with = `` occ = 0 ).
+      lv_part = replace( val = lv_part sub = `,,` with = ` ` occ = 0 ).
+      IF ls_line-tdformat <> `=` AND ls_line-tdformat <> ` ` AND ls_line-tdformat <> `/=` AND lv_text IS NOT INITIAL.
+        INSERT condense( lv_text ) INTO TABLE result.
+        CLEAR lv_text.
+      ENDIF.
+      IF ls_line-tdformat = `/:` OR ls_line-tdformat = `/*`.
+        CONTINUE.
+      ENDIF.
+      lv_text = |{ lv_text } { lv_part }|.
+    ENDLOOP.
+    lv_text = condense( lv_text ).
+    IF lv_text <> ``.
+      INSERT lv_text INTO TABLE result.
+    ENDIF.
+    DELETE result WHERE table_line IS INITIAL.
+
+  ENDMETHOD.
+
+  METHOD value_check.
+
+    DATA lv_where TYPE string.
+    DATA lv_found TYPE abap_bool.
+
+    result = abap_true.
+    IF val IS INITIAL.
+      RETURN.
+    ENDIF.
+    DATA(lo_descr) = rtti_get_value_descr( val ).
+
+    DATA(lt_fix) = rtti_get_fixed_values( lo_descr ).
+    IF lt_fix IS NOT INITIAL.
+      DATA(lv_value) = |{ val }|.
+      result = abap_false.
+      LOOP AT lt_fix INTO DATA(ls_fix).
+        IF ( ls_fix-high IS INITIAL AND lv_value = ls_fix-low )
+            OR ( ls_fix-high IS NOT INITIAL AND lv_value >= ls_fix-low AND lv_value <= ls_fix-high ).
+          result = abap_true.
+          RETURN.
+        ENDIF.
+      ENDLOOP.
+      RETURN.
+    ENDIF.
+
+    DATA(ls_table) = rtti_get_value_table( lo_descr ).
+    IF ls_table-table IS INITIAL OR ls_table-field IS INITIAL.
+      RETURN.
+    ENDIF.
+    TRY.
+        lv_where = |{ ls_table-field } = @val|.
+        SELECT SINGLE @abap_true FROM (ls_table-table) WHERE (lv_where) INTO @lv_found.
+        result = lv_found.
+      CATCH cx_root.
+        result = abap_true.
     ENDTRY.
 
   ENDMETHOD.

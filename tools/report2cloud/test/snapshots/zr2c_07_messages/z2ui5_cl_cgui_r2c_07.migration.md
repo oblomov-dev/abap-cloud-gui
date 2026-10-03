@@ -27,7 +27,6 @@ ABAP Cloud only allows released objects. Check each one; the successor is a hint
 Layout, formatting and behaviour of the classic report that the list, the ALV or the selection screen of abap-cloud-gui do not have:
 
 - MESSAGE ... DISPLAY LIKE 'E' - a status or info message displayed as an error becomes a warning (shown in the popover, the run goes on)
-- character parameters without LOWER CASE: the classic screen converted the input to upper case, the UI5 input does not - add to_upper( ) where the case matters
 
 ## Mapped
 

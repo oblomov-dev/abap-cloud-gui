@@ -14,10 +14,37 @@ CLASS z2ui5_cl_cgui_variant DEFINITION PUBLIC FINAL CREATE PUBLIC.
         select_option TYPE string VALUE `S`,
       END OF cs_kind.
 
+    "! the dynamic dates of a variant - TODAY also with an offset in days,
+    "! TODAY-1 or TODAY+7
+    CONSTANTS:
+      BEGIN OF cs_dynamic,
+        today            TYPE string VALUE `TODAY`,
+        month_start      TYPE string VALUE `MONTH_START`,
+        month_end        TYPE string VALUE `MONTH_END`,
+        prev_month_start TYPE string VALUE `PREV_MONTH_START`,
+        prev_month_end   TYPE string VALUE `PREV_MONTH_END`,
+        year_start       TYPE string VALUE `YEAR_START`,
+        year_end         TYPE string VALUE `YEAR_END`,
+      END OF cs_dynamic.
+
+    "! the date a dynamic date stands for on date today (the system date
+    "! when empty) - initial for an unknown one
+    CLASS-METHODS dynamic_date
+      IMPORTING
+        dynamic       TYPE clike
+        today         TYPE d OPTIONAL
+      RETURNING
+        VALUE(result) TYPE d.
+
+    "! the dynamic dates with their texts - what a variant offers for a date
+    CLASS-METHODS dynamic_values
+      RETURNING
+        VALUE(result) TYPE z2ui5_cl_cgui_selscreen=>ty_t_value.
+
+    "! one value of a variant: a parameter has one line with its value in
+    "! low, a select-option one line per range line - and one line without
+    "! sign when it is empty, so that loading the variant clears it
     TYPES:
-      "! one value of a variant: a parameter has one line with its value in
-      "! low, a select-option one line per range line - and one line without
-      "! sign when it is empty, so that loading the variant clears it
       BEGIN OF ty_s_value,
         name   TYPE string,
         kind   TYPE string,
@@ -25,14 +52,27 @@ CLASS z2ui5_cl_cgui_variant DEFINITION PUBLIC FINAL CREATE PUBLIC.
         option TYPE string,
         low    TYPE string,
         high   TYPE string,
+        " a dynamic date - cs_dynamic, TODAY-3 / TODAY+7 - resolved into low
+        " and high whenever the variant is loaded
+        dynamic      TYPE string,
+        dynamic_high TYPE string,
       END OF ty_s_value.
     TYPES ty_t_value TYPE STANDARD TABLE OF ty_s_value WITH EMPTY KEY.
 
     TYPES:
       BEGIN OF ty_s_variant,
-        name   TYPE string,
-        text   TYPE string,
-        values TYPE ty_t_value,
+        name      TYPE string,
+        text      TYPE string,
+        values    TYPE ty_t_value,
+        " shared: other users see the variant, protected: only the owner
+        " changes or deletes it - kept by a server store
+        shared    TYPE abap_bool,
+        protected TYPE abap_bool,
+        owner     TYPE string,
+        " the attributes of the fields: protect - shown but not ready for
+        " input, hide - not shown (the classic variant attributes)
+        protect   TYPE string_table,
+        hide      TYPE string_table,
       END OF ty_s_variant.
     TYPES ty_t_variant TYPE STANDARD TABLE OF ty_s_variant WITH EMPTY KEY.
 
@@ -181,7 +221,16 @@ CLASS z2ui5_cl_cgui_variant IMPLEMENTATION.
     DATA lr_line   TYPE REF TO data.
     DATA lv_last   TYPE string.
 
-    LOOP AT values REFERENCE INTO DATA(lr_value).
+    DATA ls_value TYPE ty_s_value.
+
+    LOOP AT values INTO ls_value.
+      DATA(lr_value) = REF #( ls_value ).
+      IF ls_value-dynamic IS NOT INITIAL.
+        ls_value-low = dynamic_date( ls_value-dynamic ).
+      ENDIF.
+      IF ls_value-dynamic_high IS NOT INITIAL.
+        ls_value-high = dynamic_date( ls_value-dynamic_high ).
+      ENDIF.
       UNASSIGN <attri>.
       ASSIGN app->(lr_value->name) TO <attri>.
       IF <attri> IS NOT ASSIGNED.
@@ -257,6 +306,73 @@ CLASS z2ui5_cl_cgui_variant IMPLEMENTATION.
         result = |{ result }, { lv_part }|.
       ENDIF.
     ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD dynamic_date.
+
+    DATA lv_offset TYPE i.
+
+    DATA(lv_today) = today.
+    IF lv_today IS INITIAL.
+      lv_today = cl_abap_context_info=>get_system_date( ).
+    ENDIF.
+    DATA(lv_dynamic) = to_upper( condense( dynamic ) ).
+
+    IF lv_dynamic CP |{ cs_dynamic-today }*|.
+      DATA(lv_rest) = substring( val = lv_dynamic
+                                 off = strlen( cs_dynamic-today ) ).
+      IF lv_rest IS INITIAL.
+        result = lv_today.
+        RETURN.
+      ENDIF.
+      TRY.
+          lv_offset = condense( substring( val = lv_rest off = 1 ) ).
+        CATCH cx_root.
+          RETURN.
+      ENDTRY.
+      CASE lv_rest(1).
+        WHEN `+`.
+          result = lv_today + lv_offset.
+        WHEN `-`.
+          result = lv_today - lv_offset.
+      ENDCASE.
+      RETURN.
+    ENDIF.
+
+    CASE lv_dynamic.
+      WHEN cs_dynamic-month_start.
+        result = |{ lv_today(6) }01|.
+      WHEN cs_dynamic-month_end.
+        result = |{ lv_today(6) }01|.
+        result = result + 31.
+        result = |{ result(6) }01|.
+        result = result - 1.
+      WHEN cs_dynamic-prev_month_start.
+        result = |{ lv_today(6) }01|.
+        result = result - 1.
+        result = |{ result(6) }01|.
+      WHEN cs_dynamic-prev_month_end.
+        result = |{ lv_today(6) }01|.
+        result = result - 1.
+      WHEN cs_dynamic-year_start.
+        result = |{ lv_today(4) }0101|.
+      WHEN cs_dynamic-year_end.
+        result = |{ lv_today(4) }1231|.
+    ENDCASE.
+
+  ENDMETHOD.
+
+  METHOD dynamic_values.
+
+    result = VALUE #( ( key = cs_dynamic-today            text = CONV #( 'Today'(001) ) )
+                      ( key = |{ cs_dynamic-today }-1|    text = CONV #( 'Yesterday'(002) ) )
+                      ( key = cs_dynamic-month_start      text = CONV #( 'First day of the month'(003) ) )
+                      ( key = cs_dynamic-month_end        text = CONV #( 'Last day of the month'(004) ) )
+                      ( key = cs_dynamic-prev_month_start text = CONV #( 'First day of the previous month'(005) ) )
+                      ( key = cs_dynamic-prev_month_end   text = CONV #( 'Last day of the previous month'(006) ) )
+                      ( key = cs_dynamic-year_start       text = CONV #( 'First day of the year'(007) ) )
+                      ( key = cs_dynamic-year_end         text = CONV #( 'Last day of the year'(008) ) ) ).
 
   ENDMETHOD.
 

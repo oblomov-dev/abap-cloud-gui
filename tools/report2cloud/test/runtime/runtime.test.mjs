@@ -87,7 +87,9 @@ test("zr2c_01_hello: parameters, OBLIGATORY, a DO loop of WRITEs", { skip }, asy
 test("zr2c_02_flights: SELECT with a select-option, TOP-OF-PAGE, colors, HIDE, AT LINE-SELECTION, END-OF-SELECTION", { skip }, async () => {
   let s = await d.start("z2ui5_cl_cgui_r2c_02");
   assert.equal(s.title, "Flights of an Airline");
-  assert.deepEqual(fieldsOf(s), ['P_CARRID="LH"*', "P_MAX=100"]);
+  // a select-option shows its first line as inputs from and to, bound to the
+  // runtime's buffer mt_cgui_so - INITIALIZATION's interval
+  assert.deepEqual(fieldsOf(s), ['P_CARRID="LH"*', `MT_CGUI_SO-0-LOW="${dateIn(0)}"`, `MT_CGUI_SO-0-HIGH="${dateIn(90)}"`, "P_MAX=100"]);
   assert.equal(actionsOf(s, "CGUI_SELECT_OPTION")[0].args[0], "S_FLDATE");
 
   // INITIALIZATION: today .. today + 90 - two of the four LH flights
@@ -141,7 +143,8 @@ test("zr2c_03_forms: FORMs with USING, CHANGING, TABLES, RANGES - the totals", {
 
 test("zr2c_04_salv: CL_SALV_TABLE as alv( ) - column texts, hidden columns, the list header", { skip }, async () => {
   let s = await d.start("z2ui5_cl_cgui_r2c_04");
-  assert.deepEqual(fieldsOf(s), ["P_ROWS=200"]);
+  // S_CARRID (OBLIGATORY, DEFAULT 'LH') from and to, S_CITYFR (NO INTERVALS) from only
+  assert.deepEqual(fieldsOf(s), ['MT_CGUI_SO-0-LOW="LH"*', 'MT_CGUI_SO-0-HIGH=""*', 'MT_CGUI_SO-1-LOW=""', "P_ROWS=200"]);
   s = await d.act(s.session, { event: "CGUI_EXECUTE" });
   const [t] = s.tables;
   assert.equal(t.label, "Flight connections (3)");
@@ -197,20 +200,20 @@ test("zr2c_06_dynamic: radio buttons and checkbox with USER-COMMAND, MODIF ID, L
   assert.equal(s.fields.find((f) => f.name === "P_PLANT")?.value, "1000", "the plant MODE set");
   s = await d.act(s.session, { event: "CGUI_VALUE_REQUEST" });
   assert.equal(s.layer, "popup");
-  // the F4 popup (z2ui5_cl_popup_to_select) is a table of the snapshot
+  // the F4 popup (z2ui5_cl_cgui_select, the runtime's own value selection) is a table of the snapshot
   let [f4] = s.tables;
   assert.equal(f4.control, "sap.m.TableSelectDialog");
   assert.deepEqual(rowsOf(f4), ["1000 Hamburg", "2000 Walldorf", "3000 Berlin"]);
-  s = await d.act(s.session, { event: "CANCEL" });
+  s = await d.act(s.session, { event: "CGUI_SEL_CANCEL" });
   assert.equal(s.layer, "main");
   assert.equal(s.fields.find((f) => f.name === "P_PLANT").value, "1000", "a cancel picks nothing");
 
   // search, then pick: the confirm with `row` selects the row as a click does
   s = await d.act(s.session, { event: "CGUI_VALUE_REQUEST" });
-  s = await d.act(s.session, { event: "SEARCH", args: ["Ber", false] });
+  s = await d.act(s.session, { event: "CGUI_SEL_SEARCH", args: ["Ber"] });
   [f4] = s.tables;
   assert.deepEqual(rowsOf(f4), ["3000 Berlin"]);
-  s = await d.act(s.session, { event: "CONFIRM", row: 0 });
+  s = await d.act(s.session, { event: "CGUI_SEL_CONFIRM", row: 0 });
   assert.equal(s.layer, "main");
   assert.equal(s.fields.find((f) => f.name === "P_PLANT").value, "3000", "the picked row's WERKS");
 
@@ -292,11 +295,53 @@ test("zr2c_09_localclass: round( dec = 2 )", {
 
 test("zr2c_11_legacy: SELECT-OPTIONS DEFAULT, IN, WRITE TO, CONCATENATE, global field symbols", { skip }, async () => {
   let s = await d.start("z2ui5_cl_cgui_r2c_11");
-  assert.deepEqual(fieldsOf(s), ['P_TITLE="Numbers"']);
+  assert.deepEqual(fieldsOf(s), ['MT_CGUI_SO-0-LOW="1"', 'MT_CGUI_SO-0-HIGH="20"', 'P_TITLE="Numbers"']);
   s = await d.act(s.session, { event: "CGUI_EXECUTE" });
   const numbers = Array.from({ length: 20 }, (_, i) => String(i + 1));
-  assert.deepEqual(d.lines(), ["Numbers", ...numbers, "Sum: 210"]);
+  // P_TITLE has no LOWER CASE: the screen converts the input to upper case,
+  // as the classic selection screen does on Execute
+  assert.deepEqual(d.lines(), ["NUMBERS", ...numbers, "Sum: 210"]);
   s = await d.act(s.session, { event: "CGUI_BACK" });
   s = await d.act(s.session, { event: "CGUI_EXECUTE" });
   assert.deepEqual(d.lines().slice(-1), ["Sum: 210"], "the sum and the numbers start afresh");
+});
+
+test("zr2c_12_pages: LINE-COUNT, TOP-OF-PAGE with sy-pagno, END-OF-PAGE, NEW-PAGE NO-HEADING, ON BLOCK and ON RADIOBUTTON GROUP", { skip }, async () => {
+  let s = await d.start("z2ui5_cl_cgui_r2c_12");
+  assert.deepEqual(fieldsOf(s), ["P_LINES=7", 'MT_CGUI_SO-0-LOW=""', "P_LIST=true", "P_LAST=false"], "S_SKIP has NO INTERVALS");
+
+  // LINE-COUNT 6(1): the runtime breaks after 6 lines of the list and
+  // writes header and footer around them (the classic 6 counted the header
+  // and the footer too - the migration report says so); the header is
+  // repeated on the next page, sy-pagno is the number of the page it stands on
+  s = await d.act(s.session, { event: "CGUI_EXECUTE" });
+  assert.deepEqual(d.lines(), [
+    "Numbers - page 1", "---", "1", "2", "3", "4", "5", "6", "continued",
+    "#",
+    "Numbers - page 2", "---", "7", "Count: 7", "continued",
+  ]);
+
+  // NEW-PAGE NO-HEADING: the last page has no header; END-OF-SELECTION
+  // writes on it. The runtime ends the last page with the footer too - the
+  // classic END-OF-PAGE ran only when a page was full (a TODO of the migration report)
+  s = await d.act(s.session, { event: "CGUI_BACK" });
+  s = await d.act(s.session, { values: { P_LAST: true, P_LIST: false, P_LINES: 3 }, event: "CGUI_EXECUTE" });
+  assert.deepEqual(d.lines(), ["Numbers - page 1", "---", "1", "2", "3", "continued", "#", "Last page", "Count: 3", "continued"]);
+  const clicks = actionsOf(s, "CGUI_LINE_SELECTION");
+  assert.deepEqual(clicks.map((a) => a.label), ["1", "2", "3"]);
+
+  // TOP-OF-PAGE DURING LINE-SELECTION heads the secondary list
+  s = await d.act(s.session, { event: clicks[1].id });
+  assert.deepEqual(d.lines(), ["Detail", "---", "Number 2"]);
+
+  // ON BLOCK b1: the message marks the first field of the block
+  s = await d.act(s.session, { event: "CGUI_BACK" });
+  s = await d.act(s.session, { event: "CGUI_BACK" });
+  s = await d.act(s.session, { values: { P_LINES: 30 }, event: "CGUI_EXECUTE" });
+  assert.ok(s.fields.length, "still on the selection screen");
+  assert.deepEqual(valueStates(s), ["error: At most 20 lines"]);
+  // ON RADIOBUTTON GROUP mode: the message belongs to the first button of the group
+  s = await d.act(s.session, { values: { P_LINES: 1 }, event: "CGUI_EXECUTE" });
+  assert.ok(s.fields.length, "still on the selection screen");
+  assert.deepEqual(popover(s), ["error: A last page needs two lines"]);
 });

@@ -31,6 +31,7 @@ CLASS z2ui5_cl_cgui_r2c_01 IMPLEMENTATION.
     screen->parameter( val        = p_name
                        text       = `Your name`
                        obligatory = abap_true
+                       lower_case = abap_true
         )->parameter( val  = p_times
                       text = `Lines` ).
 

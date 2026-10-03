@@ -251,6 +251,13 @@ ABAP Cloud, with their successors as hints: the work list for a person or an
 AI model, checked with abaplint's ABAP Cloud rules, the abap2UI5 linter and
 unit tests.
 
+There is also an in-system converter, `z2ui5_cl_cgui_converter` in `src/03`
+(run it from the ADT console with `z2ui5_cl_cgui_converter_run`): it reads a
+report of the system with its includes and text pool and takes over what it
+does not translate, with notes. report2cloud is the offline counterpart for
+exported reports - it runs without a system and refuses instead, and CI
+checks what it writes.
+
 ## Compatibility
 
 - **ABAP Cloud** and **Standard ABAP**; **NW 7.02** through a downport — the

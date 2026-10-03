@@ -6,13 +6,12 @@
 | Text pool | none - texts are placeholders, see the TODOs |
 | Result | **converted** - `z2ui5_cl_cgui_r2c_04.clas.abap`, `z2ui5_cl_cgui_r2c_04.clas.xml` |
 | Mapped | 29 construct(s) |
-| TODO | 2 |
+| TODO | 1 |
 | Release state to check | 1 object(s) |
 
 ## TODO
 
 - no selection text in the text pool for S_CARRID, S_CITYFR, P_ROWS - the label is the DDIC label of the type or the field name; pass the .prog.xml (--texts) or set text = in selection_screen( )
-- `zr2c_04_salv.prog.abap:15:1` - NO INTERVALS / NO-EXTENSION of S_CITYFR: the select-option offers intervals and multiple selection - check the lines in at_selection_screen_on( ) if the report relies on a single value
 
 ## Release state on ABAP Cloud
 

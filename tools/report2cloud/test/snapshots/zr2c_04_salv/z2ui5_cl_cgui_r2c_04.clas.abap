@@ -39,7 +39,8 @@ CLASS z2ui5_cl_cgui_r2c_04 IMPLEMENTATION.
 
     screen->select_option( val        = s_carrid
                            obligatory = abap_true
-        )->select_option( s_cityfr
+        )->select_option( val          = s_cityfr
+                          no_intervals = abap_true
         )->parameter( p_rows ).
 
   ENDMETHOD.

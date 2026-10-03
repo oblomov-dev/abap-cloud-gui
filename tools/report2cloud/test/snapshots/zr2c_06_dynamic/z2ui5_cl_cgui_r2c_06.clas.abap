@@ -75,9 +75,10 @@ CLASS z2ui5_cl_cgui_r2c_06 IMPLEMENTATION.
         )->parameter( val      = p_matnr
                       text     = `Material`
                       modif_id = `DIS`
-        )->parameter( val      = p_name
-                      text     = `Description`
-                      modif_id = `CRE`
+        )->parameter( val        = p_name
+                      text       = `Description`
+                      modif_id   = `CRE`
+                      lower_case = abap_true
         )->parameter( val      = p_qty
                       text     = `Quantity`
                       modif_id = `CRE`
@@ -97,9 +98,10 @@ CLASS z2ui5_cl_cgui_r2c_06 IMPLEMENTATION.
                       text       = `Plant`
                       value_help = abap_true
                       modif_id   = `EXP`
-        )->parameter( val      = p_token
-                      text     = `Access token`
-                      modif_id = `EXP`
+        )->parameter( val        = p_token
+                      text       = `Access token`
+                      modif_id   = `EXP`
+                      lower_case = abap_true
         )->button( text  = b_reset
                    event = `RESET`
         )->block_end( ).

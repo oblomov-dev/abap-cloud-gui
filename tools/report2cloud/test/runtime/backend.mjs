@@ -59,6 +59,13 @@ export function corePin() {
 
 const OBJECT = /^([a-z0-9_]+)\.(clas|intf|tabl)(\.[a-z_]+)?\.(abap|xml)$/i;
 
+/** objects of src/01 the build leaves out: the server-side variant store
+ *  (z2ui5_cl_cgui_variant_db and its table z2ui5_cgui_var) types its fields
+ *  with on-premise data elements (SEOCLSNAME, XUBNAME) the transpiler cannot
+ *  resolve. No report uses it - the variants stay in the browser's local
+ *  storage, as without set_variant_store( ) */
+export const EXCLUDED = new Set(["z2ui5_cgui_var", "z2ui5_cl_cgui_variant_db"]);
+
 function copyObjects(from, to) {
   if (!existsSync(from)) return;
   if (!from.endsWith(".abap") && !from.endsWith(".xml")) {
@@ -66,7 +73,8 @@ function copyObjects(from, to) {
     return;
   }
   const name = basename(from);
-  if (!OBJECT.test(name)) return;
+  const m0 = OBJECT.exec(name);
+  if (!m0 || EXCLUDED.has(m0[1].toLowerCase())) return;
   cpSync(from, join(to, name));
   // a class source brings its sidecar and includes along
   const m = /^(.*)\.clas\.abap$/.exec(name);

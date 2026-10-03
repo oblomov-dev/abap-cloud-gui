@@ -12,19 +12,13 @@
 ## TODO
 
 - no selection text in the text pool for S_RANGE, P_TITLE - the label is the DDIC label of the type or the field name; pass the .prog.xml (--texts) or set text = in selection_screen( )
-- `zr2c_11_legacy.prog.abap:21:3` - SET PF-STATUS dropped - the list has no GUI status; offer the functions as buttons of the selection screen or popups
+- `zr2c_11_legacy.prog.abap:21:3` - SET PF-STATUS dropped - the GUI status is not part of the input; set_pf_status( functions = ... ) adds its functions to the toolbar of the output, each arrives in at_user_command( )
 - `zr2c_11_legacy.prog.abap:28:3` - WRITE ... TO: converted to a string template - WRITE TO formats dates, times and numbers in the user's format; add DATE = USER / NUMBER = USER where it matters
 - `zr2c_11_legacy.prog.abap:35:3` - WRITE ... TO: converted to a string template - WRITE TO formats dates, times and numbers in the user's format; add DATE = USER / NUMBER = USER where it matters
 
 ## Release state on ABAP Cloud
 
 The class uses no database table, DDIC type, function module, class or message class outside of abap2UI5 and this addon.
-
-## Not carried over
-
-Layout, formatting and behaviour of the classic report that the list, the ALV or the selection screen of abap-cloud-gui do not have:
-
-- character parameters without LOWER CASE: the classic screen converted the input to upper case, the UI5 input does not - add to_upper( ) where the case matters
 
 ## Mapped
 

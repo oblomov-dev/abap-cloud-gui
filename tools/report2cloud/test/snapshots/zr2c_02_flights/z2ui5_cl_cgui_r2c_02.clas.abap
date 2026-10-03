@@ -32,11 +32,11 @@ CLASS z2ui5_cl_cgui_r2c_02 DEFINITION PUBLIC
     METHODS selection_screen REDEFINITION.
     METHODS at_selection_screen REDEFINITION.
     METHODS start_of_selection REDEFINITION.
+    METHODS end_of_selection REDEFINITION.
     METHODS top_of_page REDEFINITION.
     METHODS at_line_selection REDEFINITION.
 
   PRIVATE SECTION.
-    METHODS end_of_selection.
 ENDCLASS.
 
 
@@ -98,7 +98,6 @@ CLASS z2ui5_cl_cgui_r2c_02 IMPLEMENTATION.
     IF sy-subrc <> 0.
       MESSAGE s002(zr2c) WITH p_carrid INTO DATA(lv_message).
       message( lv_message ).
-      end_of_selection( ).
       RETURN.
     ENDIF.
 
@@ -121,8 +120,15 @@ CLASS z2ui5_cl_cgui_r2c_02 IMPLEMENTATION.
       gv_total = gv_total + gs_flight-seatsocc.
     ENDLOOP.
 
-    " END-OF-SELECTION
-    end_of_selection( ).
+  ENDMETHOD.
+
+  METHOD end_of_selection.
+
+    list( )->skip( ).
+    list( )->new_line(
+        )->write( `Seats occupied in total:`
+        )->write( val   = gv_total
+                  color = z2ui5_cl_cgui_list=>cs_color-total ).
 
   ENDMETHOD.
 
@@ -160,16 +166,6 @@ CLASS z2ui5_cl_cgui_r2c_02 IMPLEMENTATION.
       message( text = lv_message
                type = `I` ).
     ENDIF.
-
-  ENDMETHOD.
-
-  METHOD end_of_selection.
-
-    list( )->skip( ).
-    list( )->new_line(
-        )->write( `Seats occupied in total:`
-        )->write( val   = gv_total
-                  color = z2ui5_cl_cgui_list=>cs_color-total ).
 
   ENDMETHOD.
 

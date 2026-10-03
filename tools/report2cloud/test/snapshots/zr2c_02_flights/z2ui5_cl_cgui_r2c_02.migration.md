@@ -6,12 +6,8 @@
 | Text pool | `zr2c_02_flights.prog.xml` |
 | Result | **converted** - `z2ui5_cl_cgui_r2c_02.clas.abap`, `z2ui5_cl_cgui_r2c_02.clas.xml` |
 | Mapped | 39 construct(s) |
-| TODO | 1 |
+| TODO | 0 |
 | Release state to check | 2 object(s) |
-
-## TODO
-
-- `zr2c_02_flights.prog.abap:43:1` - TOP-OF-PAGE: the header is written before the first line of the list and after each NEW-PAGE - not at every page break; sy-pagno is not set
 
 ## Release state on ABAP Cloud
 
@@ -44,7 +40,7 @@ Layout, formatting and behaviour of the classic report that the list, the ALV or
 | 36 | `APPEND s_fldate` | `APPEND ls_s_fldate TO s_fldate` - the header line is a work area |
 | 38 | `AT SELECTION-SCREEN` | `at_selection_screen( )` |
 | 40 | `MESSAGE e001 WITH p_max` | `MESSAGE ... INTO` + `message( )` |
-| 43 | `TOP-OF-PAGE` | `top_of_page( )` - runs before the first line of the list, and is called after each NEW-PAGE |
+| 43 | `TOP-OF-PAGE` | `top_of_page( )` - the header the runtime writes above the list and repeats on every page |
 | 44 | `FORMAT COLOR COL_HEADING` | applied to the following `write( )` calls of the method (color, hotspot) |
 | 45 | `WRITE / 'Airline'` | `write( )`, color |
 | 45 | `WRITE 'No.'` | `write( )`, color |
@@ -65,7 +61,7 @@ Layout, formatting and behaviour of the classic report that the list, the ALV or
 | 72 | `HIDE gs_flight-carrid` | `hide = gs_flight-carrid` at the hotspot of the line, restored in `at_line_selection( )` |
 | 72 | `HIDE gs_flight-connid` | `hide = gs_flight-carrid gs_flight-connid` at the hotspot of the line, restored in `at_line_selection( )` |
 | 72 | `HIDE gs_flight-fldate` | `hide = gs_flight-carrid gs_flight-connid gs_flight-fldate` at the hotspot of the line, restored in `at_line_selection( )` |
-| 76 | `END-OF-SELECTION` | private method `end_of_selection( )`, called at the end of `start_of_selection( )` and before each of its RETURNs |
+| 76 | `END-OF-SELECTION` | `end_of_selection( )` - the runtime runs it after `start_of_selection( )`, after its RETURN too |
 | 77 | `SKIP` | `list( )->skip( )` |
 | 78 | `WRITE / 'Seats occupied in total:'(002)` | `write( )` |
 | 78 | `WRITE gv_total COLOR COL_TOTAL` | `write( )`, color |
