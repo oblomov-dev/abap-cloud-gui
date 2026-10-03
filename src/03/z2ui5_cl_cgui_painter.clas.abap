@@ -2,6 +2,8 @@
 "! filling in its elements, look at it in the preview and take the
 "! generated report class with you: the fields as PUBLIC attributes,
 "! selection_screen( ) and the event blocks the elements call for.
+"! The tab Import converts a classic report - pasted or read from the
+"! system by its name - into a report class (z2ui5_cl_cgui_converter).
 "! Start it like any abap2UI5 app: ?app_start=z2ui5_cl_cgui_painter
 CLASS z2ui5_cl_cgui_painter DEFINITION PUBLIC FINAL CREATE PUBLIC.
 
@@ -17,6 +19,8 @@ CLASS z2ui5_cl_cgui_painter DEFINITION PUBLIC FINAL CREATE PUBLIC.
         down   TYPE string VALUE `CGUI_P_DOWN`,
         delete TYPE string VALUE `CGUI_P_DELETE`,
         tab    TYPE string VALUE `CGUI_P_TAB`,
+        convert TYPE string VALUE `CGUI_P_CONVERT`,
+        read    TYPE string VALUE `CGUI_P_READ`,
       END OF cs_event.
 
     CONSTANTS:
@@ -24,12 +28,19 @@ CLASS z2ui5_cl_cgui_painter DEFINITION PUBLIC FINAL CREATE PUBLIC.
         elements TYPE string VALUE `ELEMENTS`,
         preview  TYPE string VALUE `PREVIEW`,
         code     TYPE string VALUE `CODE`,
+        import   TYPE string VALUE `IMPORT`,
       END OF cs_tab.
 
     DATA mt_element TYPE z2ui5_cl_cgui_painter_code=>ty_t_element.
     DATA mv_class   TYPE string.
     DATA mv_tab     TYPE string.
     DATA mv_code    TYPE string.
+    " the tab Import - the classic report, the class it became and its notes
+    DATA mv_import_program TYPE string.
+    DATA mv_import_source  TYPE string.
+    DATA mv_import_class   TYPE string.
+    DATA mv_import_code    TYPE string.
+    DATA mt_import_note    TYPE string_table.
 
   PROTECTED SECTION.
     DATA client     TYPE REF TO z2ui5_if_client.
@@ -77,6 +88,14 @@ CLASS z2ui5_cl_cgui_painter DEFINITION PUBLIC FINAL CREATE PUBLIC.
       IMPORTING
         node TYPE REF TO z2ui5_cl_ui5_view_builder.
 
+    METHODS render_import
+      IMPORTING
+        node TYPE REF TO z2ui5_cl_ui5_view_builder.
+
+    METHODS import_convert
+      IMPORTING
+        from_program TYPE abap_bool.
+
   PRIVATE SECTION.
 ENDCLASS.
 
@@ -123,6 +142,12 @@ CLASS z2ui5_cl_cgui_painter IMPLEMENTATION.
 
       WHEN cs_event-delete.
         DELETE mt_element WHERE id = CONV i( client->get_event_arg( ) ).
+
+      WHEN cs_event-convert.
+        import_convert( abap_false ).
+
+      WHEN cs_event-read.
+        import_convert( abap_true ).
 
       WHEN OTHERS.
         " a tab, or a button or user command of the preview - the screen is
@@ -252,6 +277,11 @@ CLASS z2ui5_cl_cgui_painter IMPLEMENTATION.
         )->a( n = `key`  v = cs_tab-code
         )->a( n = `text` v = `Code`
         )->a( n = `icon` v = `sap-icon://source-code` ) ).
+
+    render_import( tabs->ele( `IconTabFilter`
+        )->a( n = `key`  v = cs_tab-import
+        )->a( n = `text` t = CONV #( 'Import'(001) )
+        )->a( n = `icon` v = `sap-icon://upload` ) ).
 
     client->view_display( view->stringify( ) ).
 
@@ -473,6 +503,90 @@ CLASS z2ui5_cl_cgui_painter IMPLEMENTATION.
         )->a( n = `type`     v = `abap`
         )->a( n = `height`   v = `600px`
         )->a( n = `editable` b = abap_false ).
+
+  ENDMETHOD.
+
+  METHOD import_convert.
+
+    DATA lt_source TYPE string_table.
+    DATA ls_result TYPE z2ui5_cl_cgui_converter=>ty_s_result.
+
+    IF from_program = abap_true.
+      IF mv_import_program IS INITIAL.
+        mt_import_note = VALUE #( ( CONV #( 'Enter the name of a report'(002) ) ) ).
+        RETURN.
+      ENDIF.
+      ls_result = z2ui5_cl_cgui_converter=>convert_program( program = mv_import_program
+                                                           class   = mv_import_class ).
+    ELSE.
+      IF mv_import_source IS INITIAL.
+        mt_import_note = VALUE #( ( CONV #( 'Paste the source of a report'(003) ) ) ).
+        RETURN.
+      ENDIF.
+      SPLIT mv_import_source AT cl_abap_char_utilities=>newline INTO TABLE lt_source.
+      ls_result = z2ui5_cl_cgui_converter=>convert( source = lt_source
+                                                   class  = COND #( WHEN mv_import_class IS INITIAL
+                                                                    THEN `zcl_my_report`
+                                                                    ELSE mv_import_class ) ).
+    ENDIF.
+
+    mv_import_code = ls_result-code.
+    mt_import_note = ls_result-notes.
+
+  ENDMETHOD.
+
+  METHOD render_import.
+
+    DATA(lo_form) = node->ele( n = `SimpleForm` ns = `form`
+        )->a( n = `xmlns:form` v = `sap.ui.layout.form`
+        )->a( n = `editable`   b = abap_true
+        )->a( n = `layout`     v = `ResponsiveGridLayout`
+        )->a( n = `labelSpanL` v = `2`
+        )->a( n = `labelSpanM` v = `3` ).
+
+    lo_form->tag( `Label`
+        )->a( n = `text` t = CONV #( 'Report'(004) )
+        )->tag( `Input`
+        )->a( n = `value`       v = client->_bind( mv_import_program )
+        )->a( n = `placeholder` t = CONV #( 'Name of a report of this system'(005) )
+        )->tag( `Button`
+        )->a( n = `text`  t = CONV #( 'Read and convert'(006) )
+        )->a( n = `icon`  v = `sap-icon://download`
+        )->a( n = `press` v = client->_event( cs_event-read ) ).
+
+    lo_form->tag( `Label`
+        )->a( n = `text` t = CONV #( 'Class'(007) )
+        )->tag( `Input`
+        )->a( n = `value`       v = client->_bind( mv_import_class )
+        )->a( n = `placeholder` v = `zcl_my_report` ).
+
+    lo_form->tag( `Label`
+        )->a( n = `text` t = CONV #( 'Source'(008) )
+        )->tag( `TextArea`
+        )->a( n = `value`       v = client->_bind( mv_import_source )
+        )->a( n = `rows`        v = `12`
+        )->a( n = `width`       v = `100%`
+        )->a( n = `placeholder` t = CONV #( 'or paste the source of a classic report here'(009) )
+        )->tag( `Button`
+        )->a( n = `text`  t = CONV #( 'Convert'(010) )
+        )->a( n = `icon`  v = `sap-icon://synchronize`
+        )->a( n = `type`  v = `Emphasized`
+        )->a( n = `press` v = client->_event( cs_event-convert ) ).
+
+    LOOP AT mt_import_note INTO DATA(lv_note).
+      node->tag( `MessageStrip`
+          )->a( n = `text`  t = lv_note
+          )->a( n = `type`  v = `Warning`
+          )->a( n = `class` v = `sapUiTinyMarginBottom` ).
+    ENDLOOP.
+
+    IF mv_import_code IS NOT INITIAL.
+      node->tag( n = `CodeEditor` ns = `ce`
+          )->a( n = `value`    v = client->_bind( mv_import_code )
+          )->a( n = `type`     v = `abap`
+          )->a( n = `height`   v = `600px`
+          )->a( n = `editable` b = abap_false ).
+    ENDIF.
 
   ENDMETHOD.
 

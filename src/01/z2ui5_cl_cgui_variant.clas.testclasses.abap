@@ -27,6 +27,8 @@ CLASS ltcl_test DEFINITION FINAL FOR TESTING
     METHODS catalog_from_garbage FOR TESTING.
     METHODS values_to_text FOR TESTING.
     METHODS storage_json FOR TESTING.
+    METHODS dynamic_dates FOR TESTING.
+    METHODS dynamic_value_set FOR TESTING.
 
 ENDCLASS.
 
@@ -146,6 +148,48 @@ CLASS ltcl_test IMPLEMENTATION.
         act = z2ui5_cl_cgui_variant=>storage_json( prefix = `p`
                                                    key    = `K`
                                                    val    = |a"b\\c\nd| ) ).
+
+  ENDMETHOD.
+
+  METHOD dynamic_dates.
+
+    DATA(lv_today) = CONV d( `20260215` ).
+
+    cl_abap_unit_assert=>assert_equals( act = z2ui5_cl_cgui_variant=>dynamic_date( dynamic = `TODAY` today = lv_today )
+                                        exp = lv_today ).
+    cl_abap_unit_assert=>assert_equals( act = z2ui5_cl_cgui_variant=>dynamic_date( dynamic = `today-1` today = lv_today )
+                                        exp = CONV d( `20260214` ) ).
+    cl_abap_unit_assert=>assert_equals( act = z2ui5_cl_cgui_variant=>dynamic_date( dynamic = `TODAY+20` today = lv_today )
+                                        exp = CONV d( `20260307` ) ).
+    cl_abap_unit_assert=>assert_equals( act = z2ui5_cl_cgui_variant=>dynamic_date( dynamic = `MONTH_START` today = lv_today )
+                                        exp = CONV d( `20260201` ) ).
+    cl_abap_unit_assert=>assert_equals( act = z2ui5_cl_cgui_variant=>dynamic_date( dynamic = `MONTH_END` today = lv_today )
+                                        exp = CONV d( `20260228` ) ).
+    cl_abap_unit_assert=>assert_equals( act = z2ui5_cl_cgui_variant=>dynamic_date( dynamic = `PREV_MONTH_START` today = lv_today )
+                                        exp = CONV d( `20260101` ) ).
+    cl_abap_unit_assert=>assert_equals( act = z2ui5_cl_cgui_variant=>dynamic_date( dynamic = `PREV_MONTH_END` today = lv_today )
+                                        exp = CONV d( `20260131` ) ).
+    cl_abap_unit_assert=>assert_equals( act = z2ui5_cl_cgui_variant=>dynamic_date( dynamic = `YEAR_END` today = lv_today )
+                                        exp = CONV d( `20261231` ) ).
+    cl_abap_unit_assert=>assert_initial( z2ui5_cl_cgui_variant=>dynamic_date( dynamic = `NONSENSE` today = lv_today ) ).
+
+  ENDMETHOD.
+
+  METHOD dynamic_value_set.
+
+    DATA(lo_app) = NEW ltcl_app( ).
+    z2ui5_cl_cgui_variant=>values_set(
+        app    = lo_app
+        values = VALUE #( ( name = `P_DATE` kind = `P` low = `19990101` dynamic = `TODAY` )
+                          ( name = `S_DATE` kind = `S` sign = `I` option = `BT`
+                            dynamic = `MONTH_START` dynamic_high = `MONTH_END` ) ) ).
+
+    cl_abap_unit_assert=>assert_equals( act = lo_app->p_date
+                                        exp = cl_abap_context_info=>get_system_date( ) ).
+    cl_abap_unit_assert=>assert_equals( act = lo_app->s_date[ 1 ]-low
+                                        exp = z2ui5_cl_cgui_variant=>dynamic_date( `MONTH_START` ) ).
+    cl_abap_unit_assert=>assert_equals( act = lo_app->s_date[ 1 ]-high
+                                        exp = z2ui5_cl_cgui_variant=>dynamic_date( `MONTH_END` ) ).
 
   ENDMETHOD.
 
