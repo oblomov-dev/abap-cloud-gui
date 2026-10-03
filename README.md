@@ -106,6 +106,7 @@ Inherit from `z2ui5_cl_cgui_report`, declare the selection screen fields as
 | `at_selection_screen_on( field )` | after Execute, once per field shown — `message( type = 'E' )` marks the field and stops |
 | `at_selection_screen` | after Execute — `message( type = 'E' )` keeps the user on the selection screen |
 | `start_of_selection` | read the data, output it with `write( )` or `alv( )` |
+| `top_of_page` | when the list of a run gets its first line, before it — the page header |
 | `at_line_selection( row hide )` | a hotspot of the list or a row of the ALV was clicked |
 | `at_user_command( ucomm )` | a button of the selection screen, a checkbox or radio button group with `user_command`, or a confirmed `popup_to_confirm( )` |
 | `at_value_request( field )` | F4 on a field — the default is the standard F4 of its DDIC type; redefine it for your own and call `super->` for the rest |
@@ -226,6 +227,36 @@ build the selection screen of a new report without writing it first:
   `at_user_command( )` as far as the elements call for them. Names, types
   and the nesting of blocks and lines are checked first, and every problem
   is listed with its line.
+
+## Converting existing reports: report2cloud
+
+A report that exists already does not have to be rewritten by hand.
+[`tools/report2cloud`](tools/report2cloud/README.md) converts a classic
+report into a report class of this addon - `PARAMETERS` and
+`SELECT-OPTIONS` into attributes and `selection_screen( )`, the event blocks
+into the methods of the same name, `WRITE` / `FORMAT` / `HIDE` into the list,
+`CL_SALV_TABLE` and `REUSE_ALV_GRID_DISPLAY` into `alv( )`, `MESSAGE` into
+`message( )`, FORMs into methods:
+
+```bash
+npm ci
+npm run report2cloud -- zflights.prog.abap --out src/02
+```
+
+It is deterministic and refuses rather than guesses: what has no counterpart
+in a browser app (`CALL SCREEN`, dynpro modules, batch input, `SUBMIT`, native
+SQL) is reported with file, line and column. Next to the class it writes a
+migration report - the TODOs, and the tables and APIs that are not released on
+ABAP Cloud, with their successors as hints: the work list for a person or an
+AI model, checked with abaplint's ABAP Cloud rules, the abap2UI5 linter and
+unit tests.
+
+There is also an in-system converter, `z2ui5_cl_cgui_converter` in `src/03`
+(run it from the ADT console with `z2ui5_cl_cgui_converter_run`): it reads a
+report of the system with its includes and text pool and takes over what it
+does not translate, with notes. report2cloud is the offline counterpart for
+exported reports - it runs without a system and refuses instead, and CI
+checks what it writes.
 
 ## Compatibility
 
@@ -352,6 +383,7 @@ npm run lint            # abaplint, v750 syntax + downport rule
 npm run check:cloud     # abaplint, ABAP Cloud
 npm run check:702       # downport a scratch copy to 7.02 and check it
 npm run check:abap2ui5  # abap2UI5-linter over apps and views
+npm run test:report2cloud  # the report converter: snapshots and abaplint over its output
 ```
 
 The ABAP Unit tests run in CI in the transpiled abap2UI5 backend
