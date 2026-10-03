@@ -227,6 +227,29 @@ build the selection screen of a new report without writing it first:
   and the nesting of blocks and lines are checked first, and every problem
   is listed with its line.
 
+## Converting existing reports: report2cloud
+
+A report that exists already does not have to be rewritten by hand.
+[`tools/report2cloud`](tools/report2cloud/README.md) converts a classic
+report into a report class of this addon - `PARAMETERS` and
+`SELECT-OPTIONS` into attributes and `selection_screen( )`, the event blocks
+into the methods of the same name, `WRITE` / `FORMAT` / `HIDE` into the list,
+`CL_SALV_TABLE` and `REUSE_ALV_GRID_DISPLAY` into `alv( )`, `MESSAGE` into
+`message( )`, FORMs into methods:
+
+```bash
+npm ci
+npm run report2cloud -- zflights.prog.abap --out src/02
+```
+
+It is deterministic and refuses rather than guesses: what has no counterpart
+in a browser app (`CALL SCREEN`, dynpro modules, batch input, `SUBMIT`, native
+SQL) is reported with file, line and column. Next to the class it writes a
+migration report - the TODOs, and the tables and APIs that are not released on
+ABAP Cloud, with their successors as hints: the work list for a person or an
+AI model, checked with abaplint's ABAP Cloud rules, the abap2UI5 linter and
+unit tests.
+
 ## Compatibility
 
 - **ABAP Cloud** and **Standard ABAP**; **NW 7.02** through a downport — the
@@ -352,6 +375,7 @@ npm run lint            # abaplint, v750 syntax + downport rule
 npm run check:cloud     # abaplint, ABAP Cloud
 npm run check:702       # downport a scratch copy to 7.02 and check it
 npm run check:abap2ui5  # abap2UI5-linter over apps and views
+npm run test:report2cloud  # the report converter: snapshots and abaplint over its output
 ```
 
 The ABAP Unit tests run in CI in the transpiled abap2UI5 backend

@@ -1,0 +1,52 @@
+# report2cloud: ZR2C_10_REFUSED → z2ui5_cl_cgui_r2c_10
+
+| | |
+|---|---|
+| Source | `zr2c_10_refused.prog.abap` |
+| Text pool | none - texts are placeholders, see the TODOs |
+| Result | **refused** - 7 statement(s) cannot be mapped, no class written |
+| Mapped | 4 construct(s) |
+| TODO | 1 |
+| Release state to check | 0 object(s) |
+
+## Refused
+
+These statements have no counterpart in an abap-cloud-gui report. Rewrite them in the report (or delete them) and convert again.
+
+- `zr2c_10_refused.prog.abap:26:3` - ASSIGN of a field of another program ('(PROG)FIELD') - field symbols to screen or foreign program fields are not available in a class or on ABAP Cloud
+- `zr2c_10_refused.prog.abap:28:3` - CALL TRANSACTION - no SAP GUI transaction can be started from a browser app (batch input with USING is no API on ABAP Cloud either); call the released API of the application instead
+- `zr2c_10_refused.prog.abap:30:3` - SUBMIT - another report cannot be started from here; convert it as well and navigate to its class with client->nav_app_call( )
+- `zr2c_10_refused.prog.abap:32:3` - EXEC SQL - native SQL is not available on ABAP Cloud; use ABAP SQL on a released CDS view
+- `zr2c_10_refused.prog.abap:36:3` - CALL SCREEN - a dynpro has no counterpart in a browser app; build the screen as an abap2UI5 view or a popup
+- `zr2c_10_refused.prog.abap:38:1` - MODULE - dynpro modules have no counterpart
+- `zr2c_10_refused.prog.abap:42:1` - MODULE - dynpro modules have no counterpart
+
+## TODO
+
+- no selection text in the text pool for P_VBELN - the label is the DDIC label of the type or the field name; pass the .prog.xml (--texts) or set text = in selection_screen( )
+
+## Release state on ABAP Cloud
+
+The class uses no database table, DDIC type, function module, class or message class outside of abap2UI5 and this addon.
+
+## Not carried over
+
+Layout, formatting and behaviour of the classic report that the list, the ALV or the selection screen of abap-cloud-gui do not have:
+
+- character parameters without LOWER CASE: the classic screen converted the input to upper case, the UI5 input does not - add to_upper( ) where the case matters
+
+## Mapped
+
+| Line | Classic | abap-cloud-gui |
+|---|---|---|
+| 7 | `REPORT zr2c_10_refused` | the class, `INHERITING FROM z2ui5_cl_cgui_report` |
+| 21 | `FIELD-SYMBOLS <gv_vbeln> TYPE any` | declared in each method that uses it |
+| 23 | `PARAMETERS p_vbeln TYPE c LENGTH 10` | attribute `p_vbeln`, `screen->parameter( )` |
+| 25 | `START-OF-SELECTION` | `start_of_selection( )` |
+
+## Next steps
+
+1. Work through the TODOs above; replace every object of the release table by its released successor.
+2. Lint the class against ABAP Cloud: `node tools/report2cloud/cli.mjs <report> --check` (or `npm run check:cloud` with the class in `src/`) until it is clean.
+3. Check the views with the abap2UI5 linter (`npx abap2ui5lint`) and run the report: `?app_start=z2ui5_cl_cgui_r2c_10`.
+4. Pin the behaviour with ABAP Unit tests before the next change.

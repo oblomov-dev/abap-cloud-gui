@@ -16,6 +16,7 @@ list, ALV grid, messages. Language of code, comments, commits and docs:
 | `src/01` | the framework: `z2ui5_cl_cgui_report` (report runtime), `_selscreen`, `_list`, `_alv`, `_variant` (selection variants), `_context` (RTTI and conversion helpers), `z2ui5_cx_cgui_error` |
 | `src/02` | samples `z2ui5_cl_cgui_sample_01` … `_07` |
 | `src/03` | tools: the selection screen painter `z2ui5_cl_cgui_painter` and its code generator `_painter_code` |
+| `tools/report2cloud` | `report2cloud`, a Node CLI (no ABAP object) that converts a classic report into a report class of this addon - see below |
 | `.github/abaplint` | the Cloud and 7.02 gate configs; `abaplint.jsonc` at the root is the v750 inner loop |
 
 Naming: every class is `Z2UI5_CL_CGUI_*` / `Z2UI5_CX_CGUI_*` (abaplint
@@ -132,6 +133,34 @@ is the floor — `npm run check:abap2ui5` (the abap2UI5-linter).
   `check_on_navigated`, `check_on_event`, and every branch that shows the
   screen calls `view_display( )` — unless a popup app was called in the same
   roundtrip (`mv_cgui_nav`).
+
+## report2cloud
+
+`tools/report2cloud` converts a classic report (`.prog.abap`, its text pool
+from the `.prog.xml`) into a class inheriting from `z2ui5_cl_cgui_report`:
+`npm run report2cloud -- zreport.prog.abap [--class zcl_x] [--out dir]`. It
+parses with `@abaplint/core` at the version of `@abaplint/cli`, writes the
+class in abapGit format plus a migration report, and refuses with
+`file:row:col` what has no counterpart (dynpros, batch input, `SUBMIT`,
+native SQL, ...). The mapping table and the refusals are in its README.
+
+- **It writes against the API of `src/01` as it is.** A change to a
+  signature of `z2ui5_cl_cgui_report`, `_selscreen`, `_list` or `_alv`
+  (a parameter renamed, a method dropped) breaks the generated classes:
+  `npm run test:report2cloud` lints every class of its corpus in a scratch
+  copy of this repository - v750 with every rule of `abaplint.jsonc` (no
+  finding allowed; `test/ddic` has stubs of the flight tables), ABAP Cloud
+  with `.github/abaplint/abap_cloud.jsonc` (only the unreleased tables the
+  migration report lists). Change the converter with the API, then
+  `UPDATE_SNAPSHOTS=1 node --test tools/report2cloud/test/convert.test.mjs`
+  and review the snapshot diff.
+- **It follows the rules above**: report globals become PUBLIC attributes
+  (never PRIVATE), the selection screen binds them by reference, ABAP SQL is
+  written in strict mode, chains follow the house layout of the painter.
+- **The generated files are abapGit's format** - BOM in the sidecar, LF,
+  no trailing blanks, no line over 255 characters; the tests check every
+  generated file.
+- CI: `.github/workflows/report2cloud.yaml`.
 
 ## Verifying at runtime
 
