@@ -44,7 +44,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      # the app client (lib/appclient.mjs) is on this branch of mcp-server
+      # the app client (lib/appclient.mjs, with the selection-dialog pick and
+      # the message-popover items of its snapshot) is on this branch of mcp-server
       # until it is released - move to main then
       MCP_SERVER_REF: claude/abap2ui5-project-brainstorm-nt7ifs
     steps:

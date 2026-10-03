@@ -59,6 +59,11 @@ after(async () => {
 const fieldsOf = (s) => s.fields.map((f) => `${f.name}=${JSON.stringify(f.value)}${f.required ? "*" : ""}`);
 const toasts = (s) => s.messages.filter((m) => m.source === "toast").map((m) => m.text);
 const boxes = (s) => s.messages.filter((m) => m.source === "box").map((m) => m.text);
+/** the message popover of the main view (z2ui5_cl_cgui_report messages_render): "<type>: <title>" per message of the run */
+const popover = (s) => s.messages.filter((m) => m.source === "popover").map((m) => `${m.type}: ${m.text}`);
+/** the value states of the selection screen's fields */
+const valueStates = (s) => s.messages.filter((m) => m.source === "field").map((m) => `${m.type}: ${m.text}`);
+const rowsOf = (t) => t.rows.map((r) => `${r.WERKS} ${r.NAME}`);
 const actionsOf = (s, event) => s.actions.filter((a) => a.event === event);
 
 test("zr2c_01_hello: parameters, OBLIGATORY, a DO loop of WRITEs", { skip }, async () => {
@@ -68,7 +73,8 @@ test("zr2c_01_hello: parameters, OBLIGATORY, a DO loop of WRITEs", { skip }, asy
   assert.deepEqual(s.fields.map((f) => f.label), ["Your name", "Lines"]);
 
   s = await d.act(s.session, { event: "CGUI_EXECUTE" });
-  assert.deepEqual(s.messages.map((m) => `${m.type}: ${m.text}`), ["error: Fill in the required field Your name"], "OBLIGATORY keeps the screen");
+  assert.deepEqual(valueStates(s), ["error: Fill in the required field Your name"], "OBLIGATORY keeps the screen");
+  assert.deepEqual(popover(s), valueStates(s), "the popover collects the messages of the run");
 
   s = await d.act(s.session, { values: { P_NAME: "World" }, event: "CGUI_EXECUTE" });
   assert.deepEqual(d.lines(), ["Hello World", "---", "Line 1", "Line 2", "Line 3", "", "Done."]);
@@ -106,7 +112,7 @@ test("zr2c_02_flights: SELECT with a select-option, TOP-OF-PAGE, colors, HIDE, A
   s = await d.act(s.session, { event: "CGUI_BACK" });
   s = await d.act(s.session, { values: { P_MAX: 2000 }, event: "CGUI_EXECUTE" });
   assert.ok(s.fields.length, "still on the selection screen");
-  assert.deepEqual(d.popover(), ["Error: At most 1000 rows, not 2000"]);
+  assert.deepEqual(popover(s), ["error: At most 1000 rows, not 2000"]);
 
   // no flight: MESSAGE s002 and RETURN - the classic END-OF-SELECTION still
   // ran, and the header came with its first WRITE
@@ -176,7 +182,8 @@ test("zr2c_06_dynamic: radio buttons and checkbox with USER-COMMAND, MODIF ID, L
   assert.ok(s.texts.includes("New materials are always created in plant 1000."));
 
   s = await d.act(s.session, { event: "CGUI_EXECUTE" });
-  assert.deepEqual(s.messages.map((m) => m.text), ["Fill in the required field Description", "Fill in the required field Quantity"], "screen-required = 1");
+  assert.deepEqual(valueStates(s), ["error: Fill in the required field Description", "error: Fill in the required field Quantity"], "screen-required = 1");
+  assert.deepEqual(popover(s), valueStates(s));
 
   s = await d.act(s.session, { values: { P_NAME: "Bolt", P_QTY: 10000 }, event: "CGUI_EXECUTE" });
   assert.deepEqual(s.messages.filter((m) => m.source === "field").map((m) => m.text), ["At most 9999 pieces"], "AT SELECTION-SCREEN ON p_qty");
@@ -187,13 +194,25 @@ test("zr2c_06_dynamic: radio buttons and checkbox with USER-COMMAND, MODIF ID, L
   // the expert checkbox shows the plant with its own F4
   s = await d.act(s.session, { event: "CGUI_BACK" });
   s = await d.act(s.session, { values: { P_EXPERT: true }, event: "EXPERT" });
-  assert.ok(s.fields.some((f) => f.name === "P_PLANT"));
+  assert.equal(s.fields.find((f) => f.name === "P_PLANT")?.value, "1000", "the plant MODE set");
   s = await d.act(s.session, { event: "CGUI_VALUE_REQUEST" });
   assert.equal(s.layer, "popup");
-  // the snapshot does not describe a TableSelectDialog's items - the model has them
-  assert.deepEqual(d.state().models.POPUP.data.MR_TAB_POPUP["*"].map((r) => `${r.WERKS} ${r.NAME}`), ["1000 Hamburg", "2000 Walldorf", "3000 Berlin"]);
+  // the F4 popup (z2ui5_cl_popup_to_select) is a table of the snapshot
+  let [f4] = s.tables;
+  assert.equal(f4.control, "sap.m.TableSelectDialog");
+  assert.deepEqual(rowsOf(f4), ["1000 Hamburg", "2000 Walldorf", "3000 Berlin"]);
   s = await d.act(s.session, { event: "CANCEL" });
   assert.equal(s.layer, "main");
+  assert.equal(s.fields.find((f) => f.name === "P_PLANT").value, "1000", "a cancel picks nothing");
+
+  // search, then pick: the confirm with `row` selects the row as a click does
+  s = await d.act(s.session, { event: "CGUI_VALUE_REQUEST" });
+  s = await d.act(s.session, { event: "SEARCH", args: ["Ber", false] });
+  [f4] = s.tables;
+  assert.deepEqual(rowsOf(f4), ["3000 Berlin"]);
+  s = await d.act(s.session, { event: "CONFIRM", row: 0 });
+  assert.equal(s.layer, "main");
+  assert.equal(s.fields.find((f) => f.name === "P_PLANT").value, "3000", "the picked row's WERKS");
 
   // the push button
   s = await d.act(s.session, { event: "RESET" });
@@ -217,16 +236,16 @@ test("zr2c_07_messages: every form of MESSAGE", { skip }, async () => {
   await run({ P_TYPE: "I" });
   assert.deepEqual(boxes(s), ["TEXT-001"], "no text pool: the placeholder the migration report names");
   await run({ P_TYPE: "W" });
-  assert.deepEqual(d.popover(), ["Warning: Number 42 is a warning"]);
+  assert.deepEqual(popover(s), ["warning: Number 42 is a warning"]);
   await run({ P_TYPE: "E" });
-  assert.deepEqual(d.popover(), ["Warning: Number 42 is not allowed"], "S DISPLAY LIKE E: a warning, the run goes on");
+  assert.deepEqual(popover(s), ["warning: Number 42 is not allowed"], "S DISPLAY LIKE E: a warning, the run goes on");
   assert.deepEqual(d.lines(), ["Last message: Number 42 processed"]);
   await run({ P_TYPE: "X" });
   assert.ok(s.fields.length, "E in AT SELECTION-SCREEN keeps the screen");
-  assert.deepEqual(d.popover(), ["Error: Message type X is not S, I, W or E"]);
+  assert.deepEqual(popover(s), ["error: Message type X is not S, I, W or E"]);
   s = await d.act(s.session, { values: { P_TYPE: "S", P_NUM: -1 }, event: "CGUI_EXECUTE" });
-  assert.equal(d.popover().length, 1);
-  assert.match(d.popover()[0], /^Error: .*1.* is negative$/);
+  assert.equal(popover(s).length, 1);
+  assert.match(popover(s)[0], /^error: .*1.* is negative$/);
 });
 
 test("zr2c_08_listformat: FORMAT, AS CHECKBOX, AS ICON, HOTSPOT, HIDE, NEW-PAGE", { skip }, async () => {

@@ -1,7 +1,8 @@
 // An app of the runtime test, operated through the abap2UI5 MCP server's app
 // client (lib/appclient.mjs): the JSON protocol the UI5 frontend speaks, and
 // the agent snapshot v1 as the answer (lib/snapshot.mjs) - fields, actions,
-// tables, messages. The snapshot's `texts` are distinct strings for context,
+// tables (a value help's TableSelectDialog too), messages (the report's
+// message popover too). The snapshot's `texts` are distinct strings for context,
 // so the order of a WRITE list is read besides: the client's transport is
 // wrapped, every response is applied to a state of our own with the same
 // applyResponse the client uses, and lines() reads the list control
@@ -68,25 +69,9 @@ export async function createDriver({ mcp, url }) {
     });
   }
 
-  /** the message popover of the main view (z2ui5_cl_cgui_report
-   *  messages_render): "<Type>: <title>" per message of the run - the
-   *  snapshot does not describe MessagePopover items */
-  function popover() {
-    const xml = state.slots.MAIN?.xml;
-    if (!xml) return [];
-    const out = [];
-    const walk = (n) => {
-      if (n.local === "MessageItem") out.push(`${n.attrs.type}: ${resolve(n.attrs.title)}`);
-      n.children.forEach(walk);
-    };
-    walk(parseViewXml(xml));
-    return out;
-  }
-
   return {
     client,
     lines,
-    popover,
     /** the frontend state the responses built: slots (view XML) and models */
     state: () => state,
     start: (app, opts) => client.start(app, opts),

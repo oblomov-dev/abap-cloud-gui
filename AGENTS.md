@@ -161,7 +161,9 @@ native SQL, ...). The mapping table and the refusals are in its README.
   corpus classes with `src/01`, the popups and the seeded flight table stubs
   against `@abap2ui5/node-runtime` and operates every report through the
   JSON protocol of the frontend (mcp-server's app client): fields, Execute,
-  hotspots, grid rows, Back and a second run, each against expectations
+  hotspots, grid rows, the F4 popup (a table of the agent snapshot, picked
+  with `app_act({ event, row })`), the message popover (`snapshot.messages`,
+  source `popover`), Back and a second run, each against expectations
   written by hand from what the classic report prints. It found, past a
   green lint: report globals that grew from one Execute to the next (the
   classic report restarts after its list - `start_of_selection( )` now
