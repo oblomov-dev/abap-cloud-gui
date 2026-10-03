@@ -13,7 +13,7 @@ CLASS ltcl_app DEFINITION FINAL CREATE PUBLIC.
     DATA mv_char2  TYPE c LENGTH 3.
     DATA mt_flag   TYPE RANGE OF xsdboolean.
     DATA mt_text   TYPE RANGE OF string.
-    DATA mv_carrid TYPE s_carr_id.
+    DATA mv_carrid TYPE land1.
 
 ENDCLASS.
 
@@ -485,7 +485,7 @@ CLASS ltcl_test IMPLEMENTATION.
 
     DATA(lt_field) = lo_screen->get_fields( ).
     cl_abap_unit_assert=>assert_equals( act = lt_field[ name = `MV_CARRID` ]-dtel
-                                        exp = `S_CARR_ID` ).
+                                        exp = `LAND1` ).
     cl_abap_unit_assert=>assert_false( lt_field[ name = `MV_CHAR` ]-help ).
     DATA(lv_view) = lo_screen->stringify( ).
     IF lt_field[ name = `MV_CARRID` ]-help = abap_true.

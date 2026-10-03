@@ -41,9 +41,9 @@ CLASS z2ui5_cl_cgui_selscreen DEFINITION PUBLIC FINAL CREATE PRIVATE.
         help_request  TYPE string VALUE `CGUI_HELP_REQUEST`,
       END OF cs_event.
 
-    "! the part of a select-option F4 is asked for - the second argument of
-    "! cs_event-value_request
     CONSTANTS:
+      "! the part of a select-option F4 is asked for - the second argument of
+      "! cs_event-value_request
       BEGIN OF cs_part,
         low  TYPE string VALUE `LOW`,
         high TYPE string VALUE `HIGH`,
@@ -55,14 +55,14 @@ CLASS z2ui5_cl_cgui_selscreen DEFINITION PUBLIC FINAL CREATE PRIVATE.
         select_option TYPE string VALUE `S`,
       END OF cs_field_kind.
 
-    "! kind is cs_field_kind, upper whether the input is converted to upper
-    "! case (a character field without LOWER CASE), no_display the classic
-    "! NO-DISPLAY, value_help whether the field has F4, no_intervals the
-    "! classic NO INTERVALS of a select-option, max_length its input length,
-    "! value_check the classic VALUE CHECK, help whether F1 has a text, dtel
-    "! the data element, block the name of the block it is in, group the
-    "! group of a radio button
     TYPES:
+      "! kind is cs_field_kind, upper whether the input is converted to upper
+      "! case (a character field without LOWER CASE), no_display the classic
+      "! NO-DISPLAY, value_help whether the field has F4, no_intervals the
+      "! classic NO INTERVALS of a select-option, max_length its input length,
+      "! value_check the classic VALUE CHECK, help whether F1 has a text, dtel
+      "! the data element, block the name of the block it is in, group the
+      "! group of a radio button
       BEGIN OF ty_s_field,
         name       TYPE string,
         text       TYPE string,
@@ -83,9 +83,9 @@ CLASS z2ui5_cl_cgui_selscreen DEFINITION PUBLIC FINAL CREATE PRIVATE.
         matchcode    TYPE string,
       END OF ty_s_field.
 
-    "! SELECTION-SCREEN FUNCTION KEY n - a button of the toolbar raising
-    "! FC0n as user command
     TYPES:
+      "! SELECTION-SCREEN FUNCTION KEY n - a button of the toolbar raising
+      "! FC0n as user command
       BEGIN OF ty_s_function_key,
         number TYPE i,
         ucomm  TYPE string,
@@ -95,18 +95,18 @@ CLASS z2ui5_cl_cgui_selscreen DEFINITION PUBLIC FINAL CREATE PRIVATE.
     TYPES ty_t_function_key TYPE STANDARD TABLE OF ty_s_function_key WITH EMPTY KEY.
     TYPES ty_t_field TYPE STANDARD TABLE OF ty_s_field WITH EMPTY KEY.
 
-    "! a value of a listbox - the classic VRM_VALUES
     TYPES:
+      "! a value of a listbox - the classic VRM_VALUES
       BEGIN OF ty_s_value,
         key  TYPE string,
         text TYPE string,
       END OF ty_s_value.
     TYPES ty_t_value TYPE STANDARD TABLE OF ty_s_value WITH EMPTY KEY.
 
-    "! a line of loop_at_screen( ) - the classic SCREEN structure, with
-    "! abap_bool flags instead of '0' / '1'. id is the position of the field
-    "! on the screen, modify_screen( ) finds it by that - leave it unchanged
     TYPES:
+      "! a line of loop_at_screen( ) - the classic SCREEN structure, with
+      "! abap_bool flags instead of '0' / '1'. id is the position of the field
+      "! on the screen, modify_screen( ) finds it by that - leave it unchanged
       BEGIN OF ty_s_screen,
         id        TYPE i,
         name      TYPE string,
@@ -773,7 +773,7 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
 
   METHOD listbox_values.
 
-    FIELD-SYMBOLS <val> TYPE any.
+    FIELD-SYMBOLS <field_val> TYPE any.
 
     READ TABLE mt_listbox REFERENCE INTO DATA(lr_listbox) WITH KEY name = item-name.
     IF sy-subrc = 0.
@@ -788,11 +788,11 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
     IF mo_app IS NOT BOUND.
       RETURN.
     ENDIF.
-    ASSIGN mo_app->(item-name) TO <val>.
+    ASSIGN mo_app->(item-name) TO <field_val>.
     IF sy-subrc <> 0.
       RETURN.
     ENDIF.
-    LOOP AT z2ui5_cl_cgui_context=>rtti_get_fixed_values( cl_abap_typedescr=>describe_by_data( <val> ) ) REFERENCE INTO DATA(lr_fix).
+    LOOP AT z2ui5_cl_cgui_context=>rtti_get_fixed_values( cl_abap_typedescr=>describe_by_data( <field_val> ) ) REFERENCE INTO DATA(lr_fix).
       INSERT VALUE #( key  = lr_fix->low
                       text = lr_fix->text ) INTO TABLE result.
     ENDLOOP.
@@ -1051,9 +1051,9 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
     result-kind = kind.
     IF mv_preview = abap_false.
       result-name = name_get( val ).
-      IF client IS BOUND.
-        result-bind = client->_bind( val ).
-      ENDIF.
+      " the binding of the attribute - none without a client
+      DATA(bind) = COND string( WHEN client IS BOUND THEN client->_bind( val ) ).
+      result-bind = bind.
     ELSEIF z2ui5_cl_cgui_context=>rtti_check_boolean( val ) = abap_true.
       " a preview shows a flag as it is - every other field empty
       result-bind = COND #( WHEN val = abap_true THEN `true` ELSE `false` ).
@@ -1172,7 +1172,7 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
           lv_tab = lv_tab + 1.
           lo_container = lo_tab_items->ele( `IconTabFilter`
               )->a( n = `text` t = lr_item->text
-              )->a( n = `key`  v = |TAB{ lv_tab }| ).
+              )->a( n = `key`  t = |TAB{ lv_tab }| ).
 
         WHEN cs_kind-tabbed_end.
           CLEAR: lo_form, lo_line, lv_in_line, lo_tab_items.
@@ -1400,7 +1400,6 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
 
       WHEN cs_control-date.
         node->tag( `DatePicker`
-            " abap2ui5lint-disable-next-line unescaped-text-in-attribute -- item-bind is the binding client->_bind( ) returned when the field was declared
             )->a( n = `value`         v = item-bind
             )->a( n = `valueFormat`   v = `yyyy-MM-dd`
             )->a( n = `displayFormat` v = `medium`
@@ -1620,7 +1619,7 @@ CLASS z2ui5_cl_cgui_selscreen IMPLEMENTATION.
         ENDIF.
     ENDCASE.
 
-    lo_field->a( n = `id`       v = id
+    lo_field->a( n = `id`       t = id
         )->a( n = `required` b = xsdbool( item-required = abap_true AND id = field_id( item-name ) )
         )->a( n = `editable` b = xsdbool( item-read_only = abap_false ) ).
     IF id = field_id( item-name ).

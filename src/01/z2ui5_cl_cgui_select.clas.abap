@@ -55,7 +55,9 @@ CLASS z2ui5_cl_cgui_select DEFINITION PUBLIC FINAL CREATE PRIVATE.
     " a protected one stops the save. Not to be changed from outside.
     DATA mr_source TYPE REF TO data.
     DATA mr_all    TYPE REF TO data.
-    DATA ms_result TYPE ty_s_result.
+    " the rows picked - result( ) hands them over
+    DATA mr_result_row   TYPE REF TO data.
+    DATA mr_result_table TYPE REF TO data.
 
     "! event - left with it on a pick, event_cancel on cancel (both
     "! optional: the caller is back with no event)
@@ -87,6 +89,7 @@ CLASS z2ui5_cl_cgui_select DEFINITION PUBLIC FINAL CREATE PRIVATE.
     " PROTECTED, not PRIVATE: the popup travels in the draft, and the
     " transpiled runtime reaches PROTECTED attributes but not PRIVATE ones
     DATA client          TYPE REF TO z2ui5_if_client.
+    DATA mv_confirmed    TYPE abap_bool.
     DATA mv_title        TYPE string.
     DATA mv_multi        TYPE abap_bool.
     DATA mv_event        TYPE string.
@@ -139,8 +142,11 @@ CLASS z2ui5_cl_cgui_select IMPLEMENTATION.
     CREATE DATA result->mr_source LIKE tab.
     ASSIGN result->mr_source->* TO <source>.
     <source> = tab.
-    CREATE DATA result->ms_result-row LIKE LINE OF tab.
-    CREATE DATA result->ms_result-table LIKE tab.
+    CREATE DATA result->mr_result_row LIKE LINE OF tab.
+    CREATE DATA result->mr_result_table LIKE tab.
+    " empty - the transpiled runtime copies the rows along with LIKE
+    ASSIGN result->mr_result_table->* TO <source>.
+    CLEAR <source>.
 
     " the columns: the elementary components, or the line itself
     DATA(lo_line) = CAST cl_abap_tabledescr( cl_abap_typedescr=>describe_by_data( tab ) )->get_table_line_type( ).
@@ -231,7 +237,9 @@ CLASS z2ui5_cl_cgui_select IMPLEMENTATION.
 
   METHOD result.
 
-    result = ms_result.
+    result = VALUE #( confirmed = mv_confirmed
+                      row       = mr_result_row
+                      table     = mr_result_table ).
 
   ENDMETHOD.
 
@@ -354,8 +362,8 @@ CLASS z2ui5_cl_cgui_select IMPLEMENTATION.
     ASSIGN mr_view->* TO <view>.
     ASSIGN mr_all->* TO <all>.
     ASSIGN mr_source->* TO <source>.
-    ASSIGN ms_result-table->* TO <picked>.
-    ASSIGN ms_result-row->* TO <first>.
+    ASSIGN mr_result_table->* TO <picked>.
+    ASSIGN mr_result_row->* TO <first>.
     CLEAR: <picked>, <first>.
 
     " a single pick comes as the path of the row clicked: /NAME/index
@@ -400,7 +408,7 @@ CLASS z2ui5_cl_cgui_select IMPLEMENTATION.
       ENDIF.
     ENDLOOP.
 
-    ms_result-confirmed = abap_true.
+    mv_confirmed = abap_true.
     leave( mv_event ).
 
   ENDMETHOD.
@@ -436,9 +444,9 @@ CLASS z2ui5_cl_cgui_select IMPLEMENTATION.
         )->a( n = `growingThreshold` v = `100`
         )->a( n = `contentWidth`     v = COND #( WHEN lines( mt_column ) > 3 THEN `60rem` ELSE `40rem` )
         )->a( n = `search`           v = client->_event( val   = cs_event-search
-                                                         t_arg = VALUE #( ( `${$parameters>/value}` ) ) )
+                                                         arg   = `${$parameters>/value}` )
         )->a( n = `confirm`          v = client->_event( val   = cs_event-confirm
-                                                         t_arg = VALUE #( ( `${$parameters>/selectedContexts[0]/sPath}` ) ) )
+                                                         arg   = `${$parameters>/selectedContexts[0]/sPath}` )
         )->a( n = `cancel`           v = client->_event( cs_event-cancel ) ).
 
     DATA(lo_cells) = lo_dialog->ele( `ColumnListItem`

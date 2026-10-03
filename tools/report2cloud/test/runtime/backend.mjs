@@ -9,8 +9,9 @@
 // the transpiler the release names, and fetches open-abap-core at the
 // release's commit (lib/npm-backend.mjs); its app client operates the apps
 // over the real JSON protocol (lib/appclient.mjs). What it adds is what the
-// MCP server's build leaves out on purpose - database tables: the TABL stubs
-// of test/ddic are transpiled with the classes, their CREATE TABLE statements
+// MCP server's build leaves out on purpose - database tables: the tables of
+// src/01 (the variant and layout stores) and the TABL stubs of test/ddic are
+// transpiled with the classes, their CREATE TABLE statements
 // are taken from the transpiler's own init.mjs, and the boot creates them and
 // inserts the seed rows (seed.mjs) before the apps load.
 //
@@ -57,30 +58,24 @@ export function corePin() {
   return dep && /^\d+\.\d+\.\d+$/.test(String(dep.branch)) ? dep.branch : null;
 }
 
-const OBJECT = /^([a-z0-9_]+)\.(clas|intf|tabl)(\.[a-z_]+)?\.(abap|xml)$/i;
+const OBJECT = /^([a-z0-9_]+)\.(clas|intf|tabl|dtel)(\.[a-z_]+)?\.(abap|xml)$/i;
 
-/** objects of src/01 the build leaves out: the server-side variant store
- *  (z2ui5_cl_cgui_variant_db and its table z2ui5_cgui_var) types its fields
- *  with on-premise data elements (SEOCLSNAME, XUBNAME) the transpiler cannot
- *  resolve. No report uses it - the variants stay in the browser's local
- *  storage, as without set_variant_store( ) */
-export const EXCLUDED = new Set(["z2ui5_cgui_var", "z2ui5_cl_cgui_variant_db"]);
-
-function copyObjects(from, to) {
+function copyObjects(from, to, withTests = false) {
   if (!existsSync(from)) return;
   if (!from.endsWith(".abap") && !from.endsWith(".xml")) {
-    for (const f of readdirSync(from)) copyObjects(join(from, f), to);
+    for (const f of readdirSync(from)) copyObjects(join(from, f), to, withTests);
     return;
   }
   const name = basename(from);
-  const m0 = OBJECT.exec(name);
-  if (!m0 || EXCLUDED.has(m0[1].toLowerCase())) return;
+  if (!OBJECT.exec(name)) return;
+  // the test include of a class only for a unit run
+  if (name.endsWith(".testclasses.abap") && !withTests) return;
   cpSync(from, join(to, name));
   // a class source brings its sidecar and includes along
   const m = /^(.*)\.clas\.abap$/.exec(name);
   if (m) {
     for (const f of readdirSync(dirname(from))) {
-      if (f.startsWith(`${m[1]}.clas.`) && f !== name && !f.endsWith(".testclasses.abap")) cpSync(join(dirname(from), f), join(to, f));
+      if (f.startsWith(`${m[1]}.clas.`) && f !== name && (withTests || !f.endsWith(".testclasses.abap"))) cpSync(join(dirname(from), f), join(to, f));
     }
   }
 }
@@ -115,12 +110,16 @@ export function initSource({ modules, schema, seed }) {
 }
 
 /**
- * Transpile `files` (generated classes, { name: text }) together with src/01,
- * the popups and the DDIC stubs into a directory inside the runtime's install
- * (the modules resolve the package through its node_modules).
+ * Transpile `files` (generated classes, { name: text }) together with the
+ * packages `sources` (default src/01 - every class, interface, table and
+ * data element), the popups and the DDIC stubs into a directory inside the
+ * runtime's install (the modules resolve the package through its
+ * node_modules). `withTests` takes the test includes along and keeps the
+ * transpiler's unit-test runner (index.mjs) beside init.mjs - what
+ * scripts/unit.mjs runs; the tables are created by init.mjs either way.
  * Resolves { ok, dir, apps, version, reason? }.
  */
-export async function buildBackend({ files, ddic, seed = [], onLine = () => {} }) {
+export async function buildBackend({ files = {}, ddic, seed = [], sources = ["src/01"], withTests = false, onLine = () => {} }) {
   const mcp = resolveMcpServer();
   if (mcp.missing) return { ok: false, reason: mcp.missing };
   const pin = corePin();
@@ -141,7 +140,7 @@ export async function buildBackend({ files, ddic, seed = [], onLine = () => {} }
   mkdirSync(input);
   mkdirSync(staging);
   mkdirSync(apps);
-  copyObjects(join(REPO, "src", "01"), input);
+  for (const source of sources) copyObjects(join(REPO, source), input, withTests);
   const popups = popupsDir();
   for (const p of POPUP_FILES) copyObjects(join(popups, p), input);
   for (const [name, text] of Object.entries(files)) writeFileSync(join(input, name), text);
@@ -153,8 +152,8 @@ export async function buildBackend({ files, ddic, seed = [], onLine = () => {} }
     downportRel: relative(rt.dir, npm.downportDir(rt.dir)).split(sep).join("/"),
     coreRel: relative(rt.dir, lib.dir).split(sep).join("/"),
   });
-  config.input_filter = ["[\\\\/][a-z0-9_]+\\.(clas|intf|tabl)\\.[a-z_.]*(abap|xml)$"];
-  config.write_unit_tests = false;
+  config.input_filter = ["[\\\\/][a-z0-9_]+\\.(clas|intf|tabl|dtel)\\.[a-z_.]*(abap|xml)$"];
+  config.write_unit_tests = withTests;
   writeFileSync(join(work, "abap_transpile.json"), JSON.stringify(config, null, 2));
   const transpiler = join(rt.dir, "node_modules", "@abaplint", "transpiler-cli", "abap_transpile");
   onLine(`transpile: ${readdirSync(input).length} files against @abap2ui5/node-runtime ${rt.version}`);
@@ -185,6 +184,10 @@ export async function buildBackend({ files, ddic, seed = [], onLine = () => {} }
   if (schema.length !== tables.length) return { ok: false, dir: work, reason: `CREATE TABLE for ${tables.join(", ")} not found in the transpiler's init.mjs` };
   const modules = npm.bootOrder(initText, objects.map((o) => `${o}.mjs`).filter((f) => local.has(f)));
   writeFileSync(join(apps, "init.mjs"), initSource({ modules, schema, seed }));
+  if (withTests) {
+    if (!existsSync(join(staging, "index.mjs"))) return { ok: false, dir: work, reason: "the transpiler wrote no unit-test runner (index.mjs)" };
+    writeFileSync(join(apps, "index.mjs"), readFileSync(join(staging, "index.mjs"), "utf8"));
+  }
   rmSync(staging, { recursive: true, force: true });
   return { ok: true, dir: work, apps, runtimeDir: rt.dir, version: rt.version, modules, mcp: mcp.dir };
 }

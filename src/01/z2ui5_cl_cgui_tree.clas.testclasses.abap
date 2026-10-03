@@ -84,7 +84,7 @@ CLASS ltcl_test IMPLEMENTATION.
     mo_tree->add_node( parent = mv_child
                        text   = `20261001`
                        data   = VALUE ty_s_row( carrid = `LH` seats = 60 ) ).
-    mo_tree->add_node( text = `UA` ).
+    mo_tree->add_node( `UA` ).
 
   ENDMETHOD.
 

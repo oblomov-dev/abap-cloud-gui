@@ -292,6 +292,8 @@ CLASS z2ui5_cl_cgui_range IMPLEMENTATION.
     CLEAR error.
     CREATE DATA lr_tab LIKE range.
     ASSIGN lr_tab->* TO <tab>.
+    " empty - the transpiled runtime copies the rows along with LIKE
+    CLEAR <tab>.
 
     LOOP AT rows INTO DATA(ls_row).
       lv_index = sy-tabix.
@@ -698,7 +700,7 @@ CLASS z2ui5_cl_cgui_range IMPLEMENTATION.
         )->ele( `items` ).
     LOOP AT options( ) INTO DATA(ls_option).
       lo_options->tag( n = `Item` ns = `core`
-          )->a( n = `key`  v = ls_option-key
+          )->a( n = `key`  t = ls_option-key
           )->a( n = `text` t = ls_option-text ).
     ENDLOOP.
 
@@ -714,7 +716,7 @@ CLASS z2ui5_cl_cgui_range IMPLEMENTATION.
         )->a( n = `type`    v = `Transparent`
         )->a( n = `tooltip` t = CONV #( 'Delete line'(008) )
         )->a( n = `press`   v = client->_event( val   = cs_event-delete
-                                                t_arg = VALUE #( ( `${KEY}` ) ) ) ).
+                                                arg   = `${KEY}` ) ).
 
     lo_dialog->ele( `buttons`
         )->tag( `Button`
@@ -733,24 +735,30 @@ CLASS z2ui5_cl_cgui_range IMPLEMENTATION.
 
     DATA lo_field TYPE REF TO z2ui5_cl_ui5_view_builder.
 
+    " a box per cell - the table maps its cells to the columns by index,
+    " and the box is one cell whichever field it holds
+    DATA(lo_cell) = node->ele( `VBox` ).
+    IF part = cs_part-high.
+      lo_cell->a( n = `visible` v = `{= ${OPTION} === 'BT' || ${OPTION} === 'NB' }` ).
+    ENDIF.
     DATA(lv_bind) = |\{{ part }\}|.
 
     CASE ms_setting-control.
       WHEN cs_control-date.
-        lo_field = node->ele( `DatePicker`
+        lo_field = lo_cell->ele( `DatePicker`
             )->a( n = `value`         v = lv_bind
             )->a( n = `valueFormat`   v = `yyyyMMdd`
             )->a( n = `displayFormat` v = `medium` ).
       WHEN cs_control-time.
-        lo_field = node->ele( `TimePicker`
+        lo_field = lo_cell->ele( `TimePicker`
             )->a( n = `value`         v = lv_bind
             )->a( n = `valueFormat`   v = `HHmmss`
             )->a( n = `displayFormat` v = `HH:mm:ss` ).
       WHEN OTHERS.
-        lo_field = node->ele( `Input`
+        lo_field = lo_cell->ele( `Input`
             )->a( n = `value` v = lv_bind ).
         IF ms_setting-max_length > 0.
-          lo_field->a( n = `maxLength` v = |{ ms_setting-max_length }| ).
+          lo_field->a( n = `maxLength` t = CONV string( ms_setting-max_length ) ).
         ENDIF.
         IF ms_setting-value_help = abap_true.
           lo_field->a( n = `showValueHelp`    b = abap_true
@@ -760,9 +768,6 @@ CLASS z2ui5_cl_cgui_range IMPLEMENTATION.
     ENDCASE.
 
     lo_field->a( n = `width` v = `100%` ).
-    IF part = cs_part-high.
-      lo_field->a( n = `visible` v = `{= ${OPTION} === 'BT' || ${OPTION} === 'NB' }` ).
-    ENDIF.
 
   ENDMETHOD.
 

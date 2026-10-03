@@ -20,6 +20,7 @@ CLASS z2ui5_cl_cgui_sample_06 DEFINITION PUBLIC
     METHODS selection_screen REDEFINITION.
     METHODS at_selection_screen_output REDEFINITION.
     METHODS at_selection_screen_on REDEFINITION.
+    METHODS at_selection_screen_on_radio REDEFINITION.
     METHODS start_of_selection REDEFINITION.
     METHODS at_user_command REDEFINITION.
 
@@ -136,6 +137,20 @@ CLASS z2ui5_cl_cgui_sample_06 IMPLEMENTATION.
         IF p_plant <> `1000` AND p_plant <> `2000`.
           message( text = `Plant 1000 or 2000`
                    type = `W` ).
+        ENDIF.
+    ENDCASE.
+
+  ENDMETHOD.
+
+  METHOD at_selection_screen_on_radio.
+
+    " AT SELECTION-SCREEN ON RADIOBUTTON GROUP - an error stops at the
+    " first button of the group
+    CASE group.
+      WHEN `MODE`.
+        IF p_create = abap_true AND p_plant <> `1000`.
+          message( text = `New materials are created in plant 1000`
+                   type = `E` ).
         ENDIF.
     ENDCASE.
 

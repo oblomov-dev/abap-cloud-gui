@@ -172,19 +172,19 @@ const SCREEN_FIELDS = new Set(["name", "group1", ...SCREEN_FLAGS]);
 // the PUBLIC and PROTECTED methods and attributes of z2ui5_cl_cgui_report -
 // a FORM must not take one as method name, a global of the report not as
 // attribute name (methods and attributes share one namespace in a class)
-const BASE_METHODS = ["cgui_alv", "cgui_selected_rows", "cgui_salv_register", "cgui_run_in_background",
+const BASE_METHODS = ["cgui_run_in_background",
   "initialization", "selection_screen", "at_selection_screen_output", "at_selection_screen_on",
   "at_selection_screen", "start_of_selection", "end_of_selection", "end_of_page", "at_selection_screen_on_block",
   "at_selection_screen_on_radio", "at_selection_screen_on_end_of", "at_selection_screen_on_help",
   "at_selection_screen_on_exit", "top_of_page", "top_of_page_line_selection", "at_line_selection", "at_link_click",
   "at_tree_node", "at_tree_checkbox", "at_tree_expand_no_children", "at_data_changed", "at_user_command",
-  "at_value_request", "value_request_part", "at_alv_value_request", "authority_check", "authority_check_program",
+  "at_value_request", "value_request_part", "at_alv_value_request", "authority_check",
   "selection_screen_dynnr", "after_call_selection_screen", "write", "format", "get_cursor", "lisel",
   "set_cursor_field", "set_selscreen_status", "list", "alv", "tree", "get_selected_rows", "lsind", "message",
-  "message_t100", "messages_from_bapiret", "messages_from_log", "save_log", "popup_to_confirm", "popup_to_decide",
+  "message_t100", "messages_from_bapiret", "popup_to_confirm", "popup_to_decide",
   "popup_get_values", "popup_answer", "popup_values", "value_help_popup", "vrm_set_values",
   "leave_to_selection_screen", "window", "call_selection_screen", "submit", "set_parameter_id", "get_parameter_id",
-  "set_line_count", "set_pf_status", "set_title", "set_variant", "set_variant_store", "set_background", "get_link"];
+  "set_line_count", "set_pf_status", "set_title", "set_variant", "set_variant_store", "set_layout_store", "get_link"];
 export const RESERVED_METHODS = new Set([...BASE_METHODS, "client", "cs_ucomm", "z2ui5_if_app~main", "main",
   "at_selection_screen_ucomm", "constructor"]);
 

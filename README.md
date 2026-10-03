@@ -84,9 +84,16 @@ is a complete report.
 | `z2ui5_cl_cgui_selscreen` | `PARAMETERS`, `SELECT-OPTIONS`, `SELECTION-SCREEN BEGIN OF BLOCK / LINE`, `COMMENT`, `PUSHBUTTON`, `AS CHECKBOX`, `RADIOBUTTON GROUP`, `OBLIGATORY`, `NO-DISPLAY`, `MODIF ID`, `USER-COMMAND`, `LOOP AT SCREEN` / `MODIFY SCREEN`, F4 and the multiple selection of a select-option |
 | `z2ui5_cl_cgui_list` | `WRITE`, `NEW-LINE`, `SKIP`, `ULINE`, `NEW-PAGE`, `FORMAT COLOR`, `HOTSPOT`, `HIDE`, `AS CHECKBOX`, `AS ICON` |
 | `z2ui5_cl_cgui_alv` | `CL_SALV_TABLE` — columns and headers from RTTI/DDIC, sort, filter, double click |
+| `z2ui5_cl_cgui_tree` | `CL_SALV_TREE` — an ALV tree with lazy nodes and checkboxes |
 | `z2ui5_cl_cgui_variant` | selection variants — get, save, delete, start with a variant |
-| `z2ui5_cl_cgui_painter` | the selection screen painter (SE51 for selection screens) — fill in the elements, see the preview, take the generated report class |
+| `z2ui5_cl_cgui_variant_db` | the server store of the selection variants — table `Z2UI5_CGUI_VAR`, shared and protected variants |
+| `z2ui5_cl_cgui_layout`, `z2ui5_cl_cgui_layout_db` | the ALV layout dialog and the store of the layouts — table `Z2UI5_CGUI_LAY`, shared, protected and a default per user |
 | `z2ui5_cl_cgui_context` | helpers — among them `range_check( )`, the `IN` of a select-option for internal tables |
+
+Everything is ABAP Cloud ready, transpilable to Node and downportable to
+7.02: classes, two interfaces, the two tables with their data elements -
+no programs, no tooling on the stack. Reports are converted with
+[report2cloud](#converting-existing-reports-report2cloud), which runs in Node.
 
 All views are built with `z2ui5_cl_ui5_view_builder`. The selection screen,
 the list and the ALV can also be used on their own inside any abap2UI5 app:
@@ -192,9 +199,41 @@ METHOD initialization.
 ENDMETHOD.
 ```
 
-The variants are kept in the browser's local storage, one entry per report
-class — nothing to install, on ABAP Cloud as on premise. That also means
-they belong to the browser: another device or browser starts without them.
+By default the variants are kept in the browser's local storage, one entry
+per report class — nothing to set up, on ABAP Cloud as on premise; they
+belong to the browser then, another device starts without them. On the
+server they are kept in table `Z2UI5_CGUI_VAR` - shared with all users,
+protected against changes of others, one owner each:
+
+```abap
+METHOD initialization.
+  set_variant_store( z2ui5_cl_cgui_variant_db=>factory( ) ).
+ENDMETHOD.
+```
+
+A store of your own - another table, a RAP business object - implements
+`z2ui5_if_cgui_variant_store` (load, save, delete, check_sharing) and is set
+the same way.
+
+### ALV layouts
+
+The layout button of every ALV opens the classic "Change Layout": the
+columns shown and their order, sort, totals and subtotals. A layout is saved
+under a name, shared with all users or protected when wanted, and one of
+them is the user's default - the report starts with it. They are kept in
+table `Z2UI5_CGUI_LAY` (`z2ui5_cl_cgui_layout_db`), one namespace per report
+class and ALV. A store of your own implements `z2ui5_if_cgui_layout_store`
+and is set with `set_layout_store( store )` in `initialization( )`;
+`set_layout_store( )` without a store keeps the layouts with the selection
+variants.
+
+### Output to keep
+
+**Export** writes the ALV as CSV or as an Excel file (Office Open XML, zipped
+with `CL_ABAP_ZIP` - no `CL_SALV_TABLE`), **Print** hands the list to the
+browser as a text file - ABAP Cloud has no spool. There is no "Execute in
+Background" button: a report runs without a browser through
+`cgui_run_in_background( )`, e.g. in an application job of your own.
 
 ## Samples
 
@@ -207,26 +246,6 @@ they belong to the browser: another device or browser starts without them.
 | `z2ui5_cl_cgui_sample_05` | a complete report — select-option, F4 help, radio buttons for ALV or list, drilldown, reset with a confirmation popup, starts with the variant `DEFAULT` |
 | `z2ui5_cl_cgui_sample_06` | a dynamic selection screen — `MODIF ID`, `USER-COMMAND`, `LOOP AT SCREEN`, read-only and password fields, `NO-DISPLAY`, `AT SELECTION-SCREEN ON field` |
 | `z2ui5_cl_cgui_sample_07` | value helps — standard F4 from domain fixed values and value table, own F4 for a parameter and a select-option |
-
-## Selection screen painter
-
-Start `z2ui5_cl_cgui_painter` (`?app_start=z2ui5_cl_cgui_painter`) and
-build the selection screen of a new report without writing it first:
-
-- **Elements** — one row per element: blocks and lines, parameters with
-  their type (`c LENGTH 10`, `d`, `i`, a DDIC type), select-options,
-  checkboxes, radio buttons, comments and push buttons, with text,
-  `OBLIGATORY`, F4, radio group or button event, `MODIF ID`,
-  `USER-COMMAND` and `NO-DISPLAY`. Rows move up and down; **Sample**
-  loads a complete screen to start from.
-- **Preview** — the screen as the report will show it, drawn by the same
-  `z2ui5_cl_cgui_selscreen`, DDIC labels and F4 included.
-- **Code** — the report class to copy into the system: the fields as
-  PUBLIC attributes, `selection_screen( )` in the layout of the samples,
-  and `at_selection_screen_output( )`, `start_of_selection( )` and
-  `at_user_command( )` as far as the elements call for them. Names, types
-  and the nesting of blocks and lines are checked first, and every problem
-  is listed with its line.
 
 ## Converting existing reports: report2cloud
 
@@ -251,12 +270,9 @@ ABAP Cloud, with their successors as hints: the work list for a person or an
 AI model, checked with abaplint's ABAP Cloud rules, the abap2UI5 linter and
 unit tests.
 
-There is also an in-system converter, `z2ui5_cl_cgui_converter` in `src/03`
-(run it from the ADT console with `z2ui5_cl_cgui_converter_run`): it reads a
-report of the system with its includes and text pool and takes over what it
-does not translate, with notes. report2cloud is the offline counterpart for
-exported reports - it runs without a system and refuses instead, and CI
-checks what it writes.
+report2cloud is the generator of this repository: there is no converter or
+painter on the stack any more, the conversion runs in Node, on the reports
+of an abapGit export.
 
 ## Compatibility
 
@@ -275,8 +291,11 @@ Known limitations:
   `I CP` — use `z2ui5_cl_cgui_context=>range_check( )` for internal tables if
   the report must also run there. On an SAP system `IN` and
   `SELECT ... WHERE ... IN` work as usual.
-- Selection variants live in the browser's local storage — per browser
-  and device, not shared between users or kept on the server.
+- Without `set_variant_store( )` the selection variants live in the
+  browser's local storage — per browser and device.
+- `WRITE ... CURRENCY` takes the decimals of the currency from ISO 4217,
+  `UNIT` formats the number as it is — `TCURX` and `T006` are not released on
+  ABAP Cloud. Print is a text file, not a spool request.
 - Value tables are read on premise only — on ABAP Cloud the DDIC is not
   read, and the standard F4 is the domain's fixed values.
 - `alv( )` binds a PUBLIC attribute directly; any other table is copied into
@@ -310,8 +329,8 @@ Known limitations:
 - [x] Phase 7 — selection variants: get, save as, delete, start with a
       variant from the URL or `set_variant( )`, kept in the browser's local
       storage
-- [x] Phase 8 — selection screen painter: elements in a table, live
-      preview, the generated report class with a check of the design
+- [x] Phase 8 — selection screen painter (since replaced by report2cloud:
+      reports and classes are generated in Node, not on the stack)
 - [x] Phase 9 — message popover: the messages of a run in one place,
       counted in the footer, opened by W and E, each message of a field
       leading to the field; one message per empty required field
@@ -325,11 +344,9 @@ Selection screen
       popup of a select-option
 - [ ] `AT SELECTION-SCREEN ON BLOCK`, `ON RADIOBUTTON GROUP`, `AS LISTBOX`
 - [ ] `MEMORY ID`
-- [ ] Selection variants on the server: shared and protected variants,
-      a pluggable store beside the browser's local storage, dynamic date
-      values (today, start of month)
-- [ ] Selection screen painter: drag and drop, read an existing
-      `selection_screen( )` back in, keep the design in the browser
+- [x] Selection variants on the server (table `Z2UI5_CGUI_VAR`): shared
+      and protected variants, a pluggable store beside the browser's local
+      storage, dynamic date values
 
 Messages and logging
 
@@ -358,9 +375,10 @@ Navigation and transactions
 
 Output
 
+- [x] ALV: Excel export (Office Open XML), layouts on the server (table
+      `Z2UI5_CGUI_LAY`, shared, protected, a default per user)
 - [ ] ALV: user-formatted dates, times and amounts, totals and subtotals,
-      hotspot per column, toolbar with own functions, Excel export, layout
-      variants, editable cells
+      hotspot per column, toolbar with own functions, editable cells
 - [ ] List: `WRITE AT` positions and `UNDER`, monospace columns,
       `TOP-OF-PAGE`, secondary lists (`sy-lsind`)
 
@@ -383,8 +401,12 @@ npm run lint            # abaplint, v750 syntax + downport rule
 npm run check:cloud     # abaplint, ABAP Cloud
 npm run check:702       # downport a scratch copy to 7.02 and check it
 npm run check:abap2ui5  # abap2UI5-linter over apps and views
+npm run check:regex     # no regular expressions in src/
+npm run unit            # ABAP Unit in the transpiled backend (needs ../mcp-server and .deps/popups)
 npm run test:report2cloud  # the report converter: snapshots and abaplint over its output
 ```
 
 The ABAP Unit tests run in CI in the transpiled abap2UI5 backend
-(`.github/workflows/unit.yaml`, [abap2UI5/mcp-server](https://github.com/abap2UI5/mcp-server)).
+(`.github/workflows/unit.yaml`, `scripts/unit.mjs` with
+[abap2UI5/mcp-server](https://github.com/abap2UI5/mcp-server) as a library),
+the tables of the two stores in SQLite.

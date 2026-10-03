@@ -1,13 +1,15 @@
-// Fails on POSIX regular expressions in src/. The POSIX engine is obsolete
-// from 7.55 on - the extended check warns "The regex standard POSIX is
-// deprecated" - and PCRE does not exist on 7.02, so the code uses no regex
-// at all: FIND / CS / CN / CA, substring( ) and friends instead. abaplint has
-// no rule for it.
+// Fails on regular expressions in src/, POSIX and PCRE alike. The POSIX
+// engine is obsolete from 7.55 on - the extended check warns "The regex
+// standard POSIX is deprecated" - and PCRE does not exist on 7.02, so the
+// code uses no regex at all: FIND / CS / CN / CA, substring( ) and friends
+// instead. abaplint has no rule for it.
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 const patterns = [
   [/\bREGEX\b(?!\s*=)/i, "FIND / REPLACE ... REGEX"],
+  [/\bPCRE\b(?!\s*=)/i, "FIND / REPLACE ... PCRE"],
+  [/\bpcre\s*=/i, "pcre = in a built-in function (matches, find, replace, count, ...)"],
   [/\bregex\s*=/i, "regex = in a built-in function (matches, find, replace, count, ...)"],
   [/\bcl_abap_regex\b/i, "cl_abap_regex"],
   [/\bcl_abap_matcher\b/i, "cl_abap_matcher"],

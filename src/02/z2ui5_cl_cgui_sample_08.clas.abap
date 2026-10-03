@@ -8,8 +8,8 @@
 "!   popups            POPUP_TO_DECIDE, POPUP_GET_VALUES and a selection
 "!                     screen as popup (CALL SELECTION-SCREEN)
 "!   SUBMIT            the flight report sample 05, with the airline
-"!   server            variants on the server (shared, protected, dynamic
-"!                     dates), Execute in Background
+"!   variants          on the server (table Z2UI5_CGUI_VAR): shared,
+"!                     protected, dynamic dates
 "! Start it with ?app_start=z2ui5_cl_cgui_sample_08 - or with values and
 "! without selection screen: &p_carrid=LH&skip_screen=X
 CLASS z2ui5_cl_cgui_sample_08 DEFINITION PUBLIC
@@ -30,6 +30,13 @@ CLASS z2ui5_cl_cgui_sample_08 DEFINITION PUBLIC
         seatsmax TYPE i,
       END OF ty_s_flight.
     TYPES ty_t_flight TYPE STANDARD TABLE OF ty_s_flight WITH EMPTY KEY.
+    " the fields of BAPIRET2 messages_from_bapiret( ) reads
+    TYPES:
+      BEGIN OF ty_s_return,
+        type    TYPE c LENGTH 1,
+        message TYPE c LENGTH 220,
+      END OF ty_s_return.
+    TYPES ty_t_return TYPE STANDARD TABLE OF ty_s_return WITH EMPTY KEY.
 
     DATA p_carrid TYPE c LENGTH 3.
     DATA s_fldate TYPE RANGE OF d.
@@ -50,6 +57,7 @@ CLASS z2ui5_cl_cgui_sample_08 DEFINITION PUBLIC
     METHODS selection_screen REDEFINITION.
     METHODS selection_screen_dynnr REDEFINITION.
     METHODS after_call_selection_screen REDEFINITION.
+    METHODS at_selection_screen_on_end_of REDEFINITION.
     METHODS start_of_selection REDEFINITION.
     METHODS top_of_page_line_selection REDEFINITION.
     METHODS at_link_click REDEFINITION.
@@ -68,8 +76,8 @@ CLASS z2ui5_cl_cgui_sample_08 IMPLEMENTATION.
     set_title( `abap-cloud-gui - Flight Cockpit` ).
     " the variants on the server: shared and protected ones, dynamic dates
     set_variant_store( z2ui5_cl_cgui_variant_db=>factory( ) ).
-    set_background( ).
-    vrm_set_values( name   = `P_CLASS`
+    vrm_set_values(
+ name   = `P_CLASS`
                     values = VALUE #( ( key = `Y` text = `Economy` )
                                       ( key = `C` text = `Business` )
                                       ( key = `F` text = `First` ) ) ).
@@ -131,12 +139,29 @@ CLASS z2ui5_cl_cgui_sample_08 IMPLEMENTATION.
 
   METHOD after_call_selection_screen.
 
-    IF subrc = 0.
-      message( |Booking for { p_name } with { p_seats } seats noted| ).
-    ELSE.
-      message( text = `Booking cancelled`
-               type = `W` ).
-    ENDIF.
+    CASE dynnr.
+      WHEN `0100`.
+        IF subrc = 0.
+          message( |Booking for { p_name } with { p_seats } seats noted| ).
+        ELSE.
+          message( text = `Booking cancelled`
+                   type = `W` ).
+        ENDIF.
+    ENDCASE.
+
+  ENDMETHOD.
+
+  METHOD at_selection_screen_on_end_of.
+
+    " AT SELECTION-SCREEN ON END OF s_fldate - the multiple selection left
+    " with OK; an error opens it again
+    CASE field.
+      WHEN `S_FLDATE`.
+        IF lines( s_fldate ) > 10.
+          message( text = `At most 10 date ranges`
+                   type = `E` ).
+        ENDIF.
+    ENDCASE.
 
   ENDMETHOD.
 
@@ -257,8 +282,10 @@ CLASS z2ui5_cl_cgui_sample_08 IMPLEMENTATION.
         IF popup_answer( ) = z2ui5_cl_cgui_popup=>cs_answer-cancel OR lt_fields IS INITIAL.
           RETURN.
         ENDIF.
-        message( text = |{ lines( mt_booked ) } flights booked for { lt_fields[ name = `NAME` ]-value }|
-                 type = `I` ).
+        " the result as a BAPI returns it - one line of BAPIRET2
+        messages_from_bapiret( VALUE ty_t_return( ( type    = `I`
+                                                    message = |{ lines( mt_booked ) } flights booked for | &&
+                                                              |{ lt_fields[ name = `NAME` ]-value }| ) ) ).
 
       WHEN `BOOK_POPUP`.
         call_selection_screen( dynnr = `0100`

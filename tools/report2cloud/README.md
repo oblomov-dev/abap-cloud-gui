@@ -24,23 +24,17 @@ SQL, ...) is reported with `file:row:col` and the reason, the way cap2UI5's
 `abap2js` refuses, and no class is written. Everything else in the report -
 its logic - is copied as it is written.
 
-### report2cloud and the in-system converter
+### The converter of this repository
 
-There is also an in-system converter in this repository:
-`z2ui5_cl_cgui_converter` (`src/03`, run from the ADT console with
-`z2ui5_cl_cgui_converter_run`). It reads a report of the system with its
-includes and text pool (`convert_program( )`), translates the selection
-screen, the event blocks, FORMs, the list statements and `CL_SALV_TABLE` /
-`CL_GUI_ALV_GRID` (into `z2ui5_cl_cgui_salv` / `_grid`, the object models of
-the runtime), and takes everything else over as it is, with notes - a start
-for the person who opens the class in the same system. report2cloud is the
-offline counterpart: it runs in Node without an SAP system on the
-`.prog.abap` files of an abapGit export, parses with abaplint, refuses what
-it cannot map with `file:row:col` instead of passing it through, writes
-abapGit files and a migration report, and its output is gated in CI (the
-abaplint gates, the abap2UI5 linter and the runtime test). Use the
-in-system converter for one report on a system, report2cloud for a batch of
-exported reports, in a pipeline or an AI loop.
+report2cloud is THE converter of abap-cloud-gui: the repository has no ABAP
+tooling of its own any more (no in-system converter, no selection screen
+painter - everything under `src/` is ABAP Cloud ready, transpilable and
+downportable, and a converter that reads reports from a system is not). It
+runs in Node without an SAP system on the `.prog.abap` files of an abapGit
+export, parses with abaplint, refuses what it cannot map with `file:row:col`
+instead of passing it through, writes abapGit files and a migration report,
+and its output is gated in CI (the abaplint gates, the abap2UI5 linter and
+the runtime test) - for one report or a batch, in a pipeline or an AI loop.
 
 ## Usage
 
@@ -353,8 +347,7 @@ everything else is copied token by token with the spacing it had, and single
 tokens rewritten (`TEXT-001`, `sy-ucomm`, `screen-active`, an icon). The class
 is indented with abaplint's own pretty printer rules, the lines of a statement
 kept relative to its first line, and its call chains follow the house layout
-of the samples and the selection screen painter (`z2ui5_cl_cgui_painter_code`):
-one call per line, the parameters aligned.
+of the samples: one call per line, the parameters aligned.
 
 | File | |
 |---|---|
@@ -407,9 +400,8 @@ npm run test:report2cloud:runtime                                          # the
   needs git and network.
 - `test/runtime/runtime.test.mjs` - **every generated class must run** - a
   golden master lite: the corpus is converted, the classes are transpiled
-  with `src/01` (without the server-side variant store
-  `z2ui5_cl_cgui_variant_db` and its table, typed with on-premise data
-  elements the transpiler cannot resolve) and the popups against `@abap2ui5/node-runtime` at the
+  with `src/01` (its tables and data elements included - the variant and
+  layout stores) and the popups against `@abap2ui5/node-runtime` at the
   release `abaplint.jsonc` pins, and served on loopback. `test/ddic/` is
   transpiled with them; the boot creates the tables from the transpiler's own
   schema and inserts the rows of `test/runtime/seed.mjs` (the flight tables,

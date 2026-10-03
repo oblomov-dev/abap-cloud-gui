@@ -1,8 +1,12 @@
 "! The store of the selection variants of a report. Without one the report
-"! runtime keeps the variants in the browser's local storage; a server
-"! store is set in initialization( ) with set_variant_store( ), e.g.
-"! z2ui5_cl_cgui_variant_db=>factory( ). The store travels in the draft of
-"! the app - it must be serializable.
+"! runtime keeps the variants in the browser's local storage; the server
+"! store of this addon - table Z2UI5_CGUI_VAR, shared and protected
+"! variants - is set in initialization( ) with set_variant_store( ):
+"!   set_variant_store( z2ui5_cl_cgui_variant_db=>factory( ) ).
+"! A store of your own (another table, a RAP business object) implements
+"! this interface the same way. The store travels in the draft of the app -
+"! it must be serializable.
+
 INTERFACE z2ui5_if_cgui_variant_store PUBLIC.
 
   INTERFACES if_serializable_object.

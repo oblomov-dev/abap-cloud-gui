@@ -52,8 +52,8 @@ CLASS z2ui5_cl_cgui_alv DEFINITION PUBLIC FINAL CREATE PUBLIC.
         f4             TYPE string VALUE `CGUI_ALV_F4`,
       END OF cs_event.
 
-    "! the aggregation of a column - the classic AGGREGATION of CL_SALV
     CONSTANTS:
+      "! the aggregation of a column - the classic AGGREGATION of CL_SALV
       BEGIN OF cs_aggregation,
         none    TYPE string VALUE ``,
         sum     TYPE string VALUE `SUM`,
@@ -63,8 +63,8 @@ CLASS z2ui5_cl_cgui_alv DEFINITION PUBLIC FINAL CREATE PUBLIC.
         count   TYPE string VALUE `COUNT`,
       END OF cs_aggregation.
 
-    "! the cell type of a column - the classic CELL_TYPE of CL_SALV
     CONSTANTS:
+      "! the cell type of a column - the classic CELL_TYPE of CL_SALV
       BEGIN OF cs_cell_type,
         text             TYPE string VALUE ``,
         checkbox_hotspot TYPE string VALUE `CHECKBOX_HOTSPOT`,
@@ -79,8 +79,8 @@ CLASS z2ui5_cl_cgui_alv DEFINITION PUBLIC FINAL CREATE PUBLIC.
         right  TYPE string VALUE `End`,
       END OF cs_align.
 
-    "! the classic colors Cxyz as UI5 highlights / states - x is the color
     CONSTANTS:
+      "! the classic colors Cxyz as UI5 highlights / states - x is the color
       BEGIN OF cs_color,
         heading  TYPE string VALUE `C100`,
         normal   TYPE string VALUE `C200`,
@@ -786,8 +786,7 @@ CLASS z2ui5_cl_cgui_alv DEFINITION PUBLIC FINAL CREATE PUBLIC.
       RETURNING
         VALUE(result) TYPE ty_t_subtotal.
 
-    "! the visible columns of tab as Excel file (on premise) - empty when
-    "! it cannot be built
+    "! the visible columns of tab as Excel file (Office Open XML)
     METHODS to_xlsx
       IMPORTING
         tab           TYPE STANDARD TABLE
@@ -994,12 +993,27 @@ CLASS z2ui5_cl_cgui_alv DEFINITION PUBLIC FINAL CREATE PUBLIC.
       RETURNING
         VALUE(result) TYPE string.
 
-    "! the sort order as SORT ... BY (otab) takes it
+    "! the sort order - the columns with their direction
     METHODS sort_order
       IMPORTING
         tab           TYPE STANDARD TABLE
       RETURNING
         VALUE(result) TYPE abap_sortorder_tab.
+
+    "! tab in the sort order of the columns
+    METHODS sort_rows
+      CHANGING
+        tab TYPE STANDARD TABLE.
+
+    "! is row a of tab before row b in order
+    CLASS-METHODS rows_less
+      IMPORTING
+        tab           TYPE STANDARD TABLE
+        order         TYPE abap_sortorder_tab
+        a             TYPE i
+        b             TYPE i
+      RETURNING
+        VALUE(result) TYPE abap_bool.
 
     METHODS column_editable
       IMPORTING
@@ -1053,7 +1067,6 @@ CLASS z2ui5_cl_cgui_alv DEFINITION PUBLIC FINAL CREATE PUBLIC.
       IMPORTING
         node   TYPE REF TO z2ui5_cl_ui5_view_builder
         client TYPE REF TO z2ui5_if_client
-        tab    TYPE STANDARD TABLE
         multi  TYPE abap_bool
         total  TYPE i
         all    TYPE i.
@@ -1097,6 +1110,13 @@ CLASS z2ui5_cl_cgui_alv DEFINITION PUBLIC FINAL CREATE PUBLIC.
       IMPORTING
         val           TYPE any
         comp          TYPE z2ui5_cl_cgui_context=>ty_s_comp
+      RETURNING
+        VALUE(result) TYPE string.
+
+    "! val as text of an XML element
+    CLASS-METHODS xlsx_escape
+      IMPORTING
+        val           TYPE string
       RETURNING
         VALUE(result) TYPE string.
 
@@ -1372,7 +1392,8 @@ CLASS z2ui5_cl_cgui_alv IMPLEMENTATION.
       RETURN.
     ENDIF.
     DATA(lv_pages) = nmax( val1 = 1 val2 = ( lines + mv_page_size - 1 ) DIV mv_page_size ).
-    CASE to_upper( direction ).
+    DATA(lv_direction) = to_upper( direction ).
+    CASE lv_direction.
       WHEN cs_page-first.
         mv_page = 1.
       WHEN cs_page-previous.
@@ -1600,7 +1621,10 @@ CLASS z2ui5_cl_cgui_alv IMPLEMENTATION.
                              unit_field = lv_field ).
       ENDIF.
 
-      CASE to_upper( classic_value( row = <fcat> name = `JUST` ) ).
+      DATA(lv_just) = to_upper( classic_value( row  = <fcat>
+                                               name = `JUST` ) ).
+      CASE lv_just.
+
         WHEN `R`.
           set_column_alignment( name  = lv_name
                                 align = cs_align-right ).
@@ -2069,11 +2093,14 @@ CLASS z2ui5_cl_cgui_alv IMPLEMENTATION.
         DATA(lo_value) = COND #( WHEN pattern = abap_true
                                  THEN CAST cl_abap_datadescr( cl_abap_elemdescr=>get_string( ) )
                                  ELSE ls_comp-type ).
-        DATA(lo_range) = cl_abap_tabledescr=>get( cl_abap_structdescr=>get(
+        " create( ), not get( ) - get( ) is a stub in the transpiled runtime
+        DATA(lo_line) = cl_abap_structdescr=>create(
             VALUE #( ( name = `SIGN`   type = cl_abap_elemdescr=>get_c( 1 ) )
                      ( name = `OPTION` type = cl_abap_elemdescr=>get_c( 2 ) )
                      ( name = `LOW`    type = lo_value )
-                     ( name = `HIGH`   type = lo_value ) ) ) ).
+                     ( name = `HIGH`   type = lo_value ) ) ).
+        DATA(lo_range) = cl_abap_tabledescr=>create( lo_line ).
+
         CREATE DATA result TYPE HANDLE lo_range.
       CATCH cx_root.
         CLEAR result.
@@ -2218,6 +2245,8 @@ CLASS z2ui5_cl_cgui_alv IMPLEMENTATION.
     ENDIF.
     CREATE DATA lr_incl LIKE <range>.
     ASSIGN lr_incl->* TO <incl>.
+    " empty - the transpiled runtime copies the rows along with LIKE
+    CLEAR <incl>.
     LOOP AT <range> ASSIGNING <line>.
       INSERT <line> INTO TABLE <incl> ASSIGNING FIELD-SYMBOL(<new>).
       ASSIGN COMPONENT `SIGN` OF STRUCTURE <new> TO <sign>.
@@ -2298,7 +2327,6 @@ CLASS z2ui5_cl_cgui_alv IMPLEMENTATION.
 
     DATA lv_seq TYPE i.
 
-    DATA(lv_box) = get_box_field( ).
     LOOP AT z2ui5_cl_cgui_context=>rtti_get_t_comp( tab ) INTO DATA(ls_comp).
       IF column_skipped( ls_comp-name ) = abap_true.
         CONTINUE.
@@ -2351,6 +2379,111 @@ CLASS z2ui5_cl_cgui_alv IMPLEMENTATION.
           OR cl_abap_typedescr=>typekind_decfloat34.
         result = abap_true.
     ENDCASE.
+
+  ENDMETHOD.
+
+  METHOD sort_rows.
+
+    " a merge sort of the row numbers, bottom up - stable, and by the
+    " components the columns name at run time: SORT ... BY (otab) and
+    " SORT ... BY (name) sort nothing in the transpiled runtime
+    DATA lt_index  TYPE STANDARD TABLE OF i WITH EMPTY KEY.
+    DATA lt_merged TYPE STANDARD TABLE OF i WITH EMPTY KEY.
+    DATA lv_right  TYPE abap_bool.
+    DATA lv_a      TYPE i.
+    DATA lv_b      TYPE i.
+    DATA lv_number TYPE i.
+    DATA lr_copy   TYPE REF TO data.
+    FIELD-SYMBOLS <copy> TYPE STANDARD TABLE.
+    FIELD-SYMBOLS <row>  TYPE any.
+
+    DATA(lt_order) = sort_order( tab ).
+    DATA(lv_lines) = lines( tab ).
+    IF lt_order IS INITIAL OR lv_lines < 2.
+      RETURN.
+    ENDIF.
+    DO lv_lines TIMES.
+      lv_number = sy-index.
+      INSERT lv_number INTO TABLE lt_index.
+    ENDDO.
+
+    DATA(lv_width) = 1.
+    WHILE lv_width < lv_lines.
+      CLEAR lt_merged.
+      DATA(lv_left) = 1.
+      WHILE lv_left <= lv_lines.
+        " the runs [left, mid) and [mid, end) into one
+        DATA(lv_mid) = nmin( val1 = lv_left + lv_width
+                             val2 = lv_lines + 1 ).
+        DATA(lv_end) = nmin( val1 = lv_left + 2 * lv_width
+                             val2 = lv_lines + 1 ).
+        DATA(lv_i) = lv_left.
+        DATA(lv_j) = lv_mid.
+        WHILE lv_i < lv_mid OR lv_j < lv_end.
+          IF lv_j >= lv_end.
+            lv_right = abap_false.
+          ELSEIF lv_i >= lv_mid.
+            lv_right = abap_true.
+          ELSE.
+            " the right one only when it is really before - stable
+            READ TABLE lt_index INDEX lv_j INTO lv_a.
+            READ TABLE lt_index INDEX lv_i INTO lv_b.
+            lv_right = rows_less( tab   = tab
+                                  order = lt_order
+                                  a     = lv_a
+                                  b     = lv_b ).
+          ENDIF.
+          IF lv_right = abap_true.
+            READ TABLE lt_index INDEX lv_j INTO lv_number.
+            lv_j = lv_j + 1.
+          ELSE.
+            READ TABLE lt_index INDEX lv_i INTO lv_number.
+            lv_i = lv_i + 1.
+          ENDIF.
+          INSERT lv_number INTO TABLE lt_merged.
+        ENDWHILE.
+        lv_left = lv_end.
+      ENDWHILE.
+      lt_index = lt_merged.
+      lv_width = lv_width * 2.
+    ENDWHILE.
+
+    " the rows anew in that order
+    CREATE DATA lr_copy LIKE tab.
+    ASSIGN lr_copy->* TO <copy>.
+    <copy> = tab.
+    CLEAR tab.
+    LOOP AT lt_index INTO DATA(lv_row).
+      READ TABLE <copy> INDEX lv_row ASSIGNING <row>.
+      INSERT <row> INTO TABLE tab.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD rows_less.
+
+    FIELD-SYMBOLS <row_a> TYPE any.
+    FIELD-SYMBOLS <row_b> TYPE any.
+    FIELD-SYMBOLS <val_a> TYPE any.
+    FIELD-SYMBOLS <val_b> TYPE any.
+
+    READ TABLE tab INDEX a ASSIGNING <row_a>.
+    READ TABLE tab INDEX b ASSIGNING <row_b>.
+    LOOP AT order INTO DATA(ls_order).
+      DATA(lv_name) = condense( CONV string( ls_order-name ) ).
+      UNASSIGN: <val_a>, <val_b>.
+      ASSIGN COMPONENT lv_name OF STRUCTURE <row_a> TO <val_a>.
+      ASSIGN COMPONENT lv_name OF STRUCTURE <row_b> TO <val_b>.
+      IF <val_a> IS NOT ASSIGNED OR <val_b> IS NOT ASSIGNED OR <val_a> = <val_b>.
+        CONTINUE.
+      ENDIF.
+      IF ls_order-descending = abap_true.
+        result = xsdbool( <val_a> > <val_b> ).
+      ELSE.
+        result = xsdbool( <val_a> < <val_b> ).
+      ENDIF.
+      RETURN.
+    ENDLOOP.
 
   ENDMETHOD.
 
@@ -2468,10 +2601,7 @@ CLASS z2ui5_cl_cgui_alv IMPLEMENTATION.
     CREATE DATA lr_copy LIKE tab.
     ASSIGN lr_copy->* TO <copy>.
     <copy> = tab.
-    DATA(lt_order) = sort_order( tab ).
-    IF lt_order IS NOT INITIAL.
-      SORT <copy> BY (lt_order).
-    ENDIF.
+    sort_rows( CHANGING tab = <copy> ).
 
     DATA(lt_comp) = columns_visible( tab ).
     LOOP AT lt_comp INTO DATA(ls_comp).
@@ -2560,7 +2690,9 @@ CLASS z2ui5_cl_cgui_alv IMPLEMENTATION.
           lv_text = substring( val = lv_text len = ls_width-width ).
         ENDIF.
         IF ls_width-right = abap_true.
-          lv_line = |{ lv_line }{ lv_text WIDTH = ls_width-width ALIGN = RIGHT } |.
+          lv_line = |{ lv_line }{ z2ui5_cl_cgui_context=>text_align( val   = lv_text
+                                                                       width = ls_width-width
+                                                                       align = `RIGHT` ) } |.
         ELSE.
           lv_line = |{ lv_line }{ lv_text WIDTH = ls_width-width } |.
         ENDIF.
@@ -2580,41 +2712,93 @@ CLASS z2ui5_cl_cgui_alv IMPLEMENTATION.
 
   METHOD to_xlsx.
 
-    DATA lr_copy TYPE REF TO data.
-    DATA lo_salv TYPE REF TO cl_salv_table.
+    " an Office Open XML workbook of one sheet, written as XML and zipped
+    " with CL_ABAP_ZIP - released on ABAP Cloud and on every release down
+    " to 7.02, no CL_SALV_TABLE. Numbers are cells with a value, everything
+    " else inline text as the list shows it
+    CONSTANTS lc_xml TYPE string VALUE `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`.
+    CONSTANTS lc_rel TYPE string VALUE `http://schemas.openxmlformats.org/officeDocument/2006/relationships`.
+    DATA lr_copy  TYPE REF TO data.
+    DATA lt_xml   TYPE string_table.
+    DATA lt_cell  TYPE string_table.
     FIELD-SYMBOLS <copy> TYPE STANDARD TABLE.
+    FIELD-SYMBOLS <row>  TYPE any.
+    FIELD-SYMBOLS <cell> TYPE any.
 
     CREATE DATA lr_copy LIKE tab.
     ASSIGN lr_copy->* TO <copy>.
     <copy> = tab.
-    DATA(lt_order) = sort_order( tab ).
-    IF lt_order IS NOT INITIAL.
-      SORT <copy> BY (lt_order).
-    ENDIF.
+    sort_rows( CHANGING tab = <copy> ).
+    DATA(lt_visible) = columns_visible( tab ).
 
-    TRY.
-        cl_salv_table=>factory( IMPORTING r_salv_table = lo_salv
-                                CHANGING  t_table      = <copy> ).
-        DATA(lo_columns) = lo_salv->get_columns( ).
-        DATA(lt_visible) = columns_visible( tab ).
-        LOOP AT lo_columns->get( ) INTO DATA(ls_column).
-          READ TABLE lt_visible INTO DATA(ls_visible) WITH KEY name = ls_column-columnname.
-          IF sy-subrc <> 0.
-            ls_column-r_column->set_visible( abap_false ).
-            CONTINUE.
-          ENDIF.
-          ls_column-r_column->set_long_text( CONV #( ls_visible-label ) ).
-          ls_column-r_column->set_medium_text( CONV #( ls_visible-label ) ).
-          ls_column-r_column->set_short_text( CONV #( ls_visible-label ) ).
-        ENDLOOP.
-        LOOP AT lt_visible INTO ls_visible.
-          lo_columns->set_column_position( columnname = CONV #( ls_visible-name )
-                                           position   = sy-tabix ).
-        ENDLOOP.
-        result = lo_salv->to_xml( xml_type = if_salv_bs_xml=>c_type_xlsx ).
-      CATCH cx_root.
-        CLEAR result.
-    ENDTRY.
+    INSERT |{ lc_xml }<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>|
+           INTO TABLE lt_xml.
+    LOOP AT lt_visible INTO DATA(ls_visible).
+      INSERT |<c t="inlineStr"><is><t>{ xlsx_escape( ls_visible-label ) }</t></is></c>| INTO TABLE lt_cell.
+    ENDLOOP.
+    INSERT |<row>{ concat_lines_of( lt_cell ) }</row>| INTO TABLE lt_xml.
+
+    LOOP AT <copy> ASSIGNING <row>.
+      CLEAR lt_cell.
+      LOOP AT lt_visible INTO ls_visible.
+        ASSIGN COMPONENT ls_visible-name OF STRUCTURE <row> TO <cell>.
+        IF sy-subrc <> 0.
+          INSERT `<c/>` INTO TABLE lt_cell.
+          CONTINUE.
+        ENDIF.
+        CASE ls_visible-type_kind.
+          WHEN cl_abap_typedescr=>typekind_int OR cl_abap_typedescr=>typekind_int1
+              OR cl_abap_typedescr=>typekind_int2 OR cl_abap_typedescr=>typekind_int8
+              OR cl_abap_typedescr=>typekind_packed OR cl_abap_typedescr=>typekind_float
+              OR cl_abap_typedescr=>typekind_decfloat16 OR cl_abap_typedescr=>typekind_decfloat34.
+            INSERT |<c><v>{ <cell> }</v></c>| INTO TABLE lt_cell.
+          WHEN OTHERS.
+            INSERT |<c t="inlineStr"><is><t>{ xlsx_escape( cell_to_text( val  = <cell>
+                                                                       comp = ls_visible ) ) }</t></is></c>|
+                   INTO TABLE lt_cell.
+        ENDCASE.
+      ENDLOOP.
+      INSERT |<row>{ concat_lines_of( lt_cell ) }</row>| INTO TABLE lt_xml.
+    ENDLOOP.
+    INSERT `</sheetData></worksheet>` INTO TABLE lt_xml.
+
+    DATA(lo_zip) = NEW cl_abap_zip( ).
+    lo_zip->add( name    = `[Content_Types].xml`
+                 content = z2ui5_cl_cgui_context=>conv_get_xstring_by_string(
+                     |{ lc_xml }<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">|
+                  && |<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>|
+                  && |<Default Extension="xml" ContentType="application/xml"/>|
+                  && |<Override PartName="/xl/workbook.xml" |
+                  && |ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>|
+                  && |<Override PartName="/xl/worksheets/sheet1.xml" |
+                  && |ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>|
+                  && |</Types>| ) ).
+    lo_zip->add( name    = `_rels/.rels`
+                 content = z2ui5_cl_cgui_context=>conv_get_xstring_by_string(
+                     |{ lc_xml }<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">|
+                  && |<Relationship Id="rId1" Type="{ lc_rel }/officeDocument" Target="xl/workbook.xml"/>|
+                  && |</Relationships>| ) ).
+    lo_zip->add( name    = `xl/workbook.xml`
+                 content = z2ui5_cl_cgui_context=>conv_get_xstring_by_string(
+                     |{ lc_xml }<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" |
+                  && |xmlns:r="{ lc_rel }"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>| ) ).
+    lo_zip->add( name    = `xl/_rels/workbook.xml.rels`
+                 content = z2ui5_cl_cgui_context=>conv_get_xstring_by_string(
+                     |{ lc_xml }<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">|
+                  && |<Relationship Id="rId1" Type="{ lc_rel }/worksheet" Target="worksheets/sheet1.xml"/>|
+                  && |</Relationships>| ) ).
+    lo_zip->add( name    = `xl/worksheets/sheet1.xml`
+                 content = z2ui5_cl_cgui_context=>conv_get_xstring_by_string( concat_lines_of( lt_xml ) ) ).
+    result = lo_zip->save( ).
+
+  ENDMETHOD.
+
+  METHOD xlsx_escape.
+
+    result = replace( val = val sub = `&` with = `&amp;` occ = 0 ).
+    result = replace( val = result sub = `<` with = `&lt;` occ = 0 ).
+    result = replace( val = result sub = `>` with = `&gt;` occ = 0 ).
+    result = replace( val = result sub = `"` with = `&quot;` occ = 0 ).
 
   ENDMETHOD.
 
@@ -2716,7 +2900,6 @@ CLASS z2ui5_cl_cgui_alv IMPLEMENTATION.
     DATA lv_seq     TYPE i.
 
     " in the order of the components - a position set comes first
-    DATA(lv_box) = get_box_field( ).
     LOOP AT z2ui5_cl_cgui_context=>rtti_get_t_comp( tab ) INTO DATA(ls_comp).
       IF column_skipped( ls_comp-name ) = abap_true.
         CONTINUE.
@@ -2804,7 +2987,6 @@ CLASS z2ui5_cl_cgui_alv IMPLEMENTATION.
 
     render_toolbar( node   = lo_table->ele( n = `extension` ns = `table` )
                     client = client
-                    tab    = tab
                     multi  = lv_multi
                     total  = COND #( WHEN total >= 0 THEN total ELSE lines( tab ) )
                     all    = all ).
@@ -3025,21 +3207,22 @@ CLASS z2ui5_cl_cgui_alv IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    DATA(lv_hotspot) = client->_event( val   = cs_event-hotspot
-                                       t_arg = VALUE #( ( `$event.oSource.getBindingContext().getPath()` )
-                                                        ( comp-name ) ) ).
     CASE column-cell_type.
       WHEN cs_cell_type-checkbox_hotspot.
         " a checkbox that can be clicked - the value changes, the event follows
         node->tag( `CheckBox`
             )->a( n = `selected` v = |\{{ comp-name }\}|
-            )->a( n = `select`   v = lv_hotspot ).
+            )->a( n = `select`   v = client->_event( val   = cs_event-hotspot
+                                                     t_arg = VALUE #( ( `$event.oSource.getBindingContext().getPath()` )
+                                                                      ( comp-name ) ) ) ).
         RETURN.
       WHEN cs_cell_type-button.
         node->tag( `Button`
             )->a( n = `text`  v = cell_binding( comp   = comp
                                                 column = column )
-            )->a( n = `press` v = lv_hotspot ).
+            )->a( n = `press` v = client->_event( val   = cs_event-hotspot
+                                                  t_arg = VALUE #( ( `$event.oSource.getBindingContext().getPath()` )
+                                                                   ( comp-name ) ) ) ).
         RETURN.
       WHEN cs_cell_type-dropdown.
         " shown: the text of the key
@@ -3102,20 +3285,16 @@ CLASS z2ui5_cl_cgui_alv IMPLEMENTATION.
 
   METHOD render_edit.
 
-    DATA(lv_change) = client->_event( val   = cs_event-data_changed
-                                      t_arg = VALUE #( ( `$event.oSource.getBindingContext().getPath()` )
-                                                       ( comp-name ) ) ).
 
     DATA(lv_editable) = edit_binding( ).
-    DATA(lv_f4) = client->_event( val   = cs_event-f4
-                                  t_arg = VALUE #( ( `$event.oSource.getBindingContext().getPath()` )
-                                                   ( comp-name ) ) ).
 
     IF column-cell_type = cs_cell_type-dropdown.
       DATA(lo_select) = node->ele( `Select`
           )->a( n = `selectedKey`    v = |\{{ comp-name }\}|
           )->a( n = `forceSelection` b = abap_false
-          )->a( n = `change`         v = lv_change ).
+          )->a( n = `change`         v = client->_event( val   = cs_event-data_changed
+                                                         t_arg = VALUE #( ( `$event.oSource.getBindingContext().getPath()` )
+                                                                          ( comp-name ) ) ) ).
       IF lv_editable IS NOT INITIAL.
         lo_select->a( n = `enabled` v = lv_editable ).
       ENDIF.
@@ -3134,7 +3313,9 @@ CLASS z2ui5_cl_cgui_alv IMPLEMENTATION.
     IF comp-boolean = abap_true.
       node->tag( `CheckBox`
           )->a( n = `selected` v = |\{{ comp-name }\}|
-          )->a( n = `select`   v = lv_change ).
+          )->a( n = `select`   v = client->_event( val   = cs_event-data_changed
+                                                   t_arg = VALUE #( ( `$event.oSource.getBindingContext().getPath()` )
+                                                                    ( comp-name ) ) ) ).
       IF lv_editable IS NOT INITIAL.
         node->a( n = `editable` v = lv_editable ).
       ENDIF.
@@ -3147,7 +3328,9 @@ CLASS z2ui5_cl_cgui_alv IMPLEMENTATION.
             )->a( n = `value`         v = |\{{ comp-name }\}|
             )->a( n = `valueFormat`   v = `yyyy-MM-dd`
             )->a( n = `displayFormat` v = `medium`
-            )->a( n = `change`        v = lv_change ).
+            )->a( n = `change`        v = client->_event( val   = cs_event-data_changed
+                                                          t_arg = VALUE #( ( `$event.oSource.getBindingContext().getPath()` )
+                                                                           ( comp-name ) ) ) ).
         IF lv_editable IS NOT INITIAL.
           node->a( n = `editable` v = lv_editable ).
         ENDIF.
@@ -3156,7 +3339,9 @@ CLASS z2ui5_cl_cgui_alv IMPLEMENTATION.
             )->a( n = `value`         v = |\{{ comp-name }\}|
             )->a( n = `valueFormat`   v = `HH:mm:ss`
             )->a( n = `displayFormat` v = `HH:mm:ss`
-            )->a( n = `change`        v = lv_change ).
+            )->a( n = `change`        v = client->_event( val   = cs_event-data_changed
+                                                          t_arg = VALUE #( ( `$event.oSource.getBindingContext().getPath()` )
+                                                                           ( comp-name ) ) ) ).
         IF lv_editable IS NOT INITIAL.
           node->a( n = `editable` v = lv_editable ).
         ENDIF.
@@ -3166,10 +3351,14 @@ CLASS z2ui5_cl_cgui_alv IMPLEMENTATION.
               )->a( n = `value`     v = cell_binding( comp   = comp
                                                       column = column )
               )->a( n = `textAlign` v = `End`
-              )->a( n = `change`    v = lv_change ).
+              )->a( n = `change`    v = client->_event( val   = cs_event-data_changed
+                                                        t_arg = VALUE #( ( `$event.oSource.getBindingContext().getPath()` )
+                                                                         ( comp-name ) ) ) ).
           IF column-f4 = abap_true.
             node->a( n = `showValueHelp`    b = abap_true
-                )->a( n = `valueHelpRequest` v = lv_f4 ).
+                )->a( n = `valueHelpRequest` v = client->_event( val   = cs_event-f4
+                                                                 t_arg = VALUE #( ( `$event.oSource.getBindingContext().getPath()` )
+                                                                                  ( comp-name ) ) ) ).
           ENDIF.
           IF lv_editable IS NOT INITIAL.
             node->a( n = `editable` v = lv_editable ).
@@ -3177,10 +3366,14 @@ CLASS z2ui5_cl_cgui_alv IMPLEMENTATION.
         ELSE.
           node->tag( `Input`
               )->a( n = `value`  v = |\{{ comp-name }\}|
-              )->a( n = `change` v = lv_change ).
+              )->a( n = `change` v = client->_event( val   = cs_event-data_changed
+                                                     t_arg = VALUE #( ( `$event.oSource.getBindingContext().getPath()` )
+                                                                      ( comp-name ) ) ) ).
           IF column-f4 = abap_true.
             node->a( n = `showValueHelp`    b = abap_true
-                )->a( n = `valueHelpRequest` v = lv_f4 ).
+                )->a( n = `valueHelpRequest` v = client->_event( val   = cs_event-f4
+                                                                 t_arg = VALUE #( ( `$event.oSource.getBindingContext().getPath()` )
+                                                                                  ( comp-name ) ) ) ).
           ENDIF.
           IF lv_editable IS NOT INITIAL.
             node->a( n = `editable` v = lv_editable ).
@@ -3447,19 +3640,19 @@ CLASS z2ui5_cl_cgui_alv IMPLEMENTATION.
       IF lv_xlsx IS NOT INITIAL.
         client->follow_up_action( val   = client->cs_event-download_b64_file
                                   t_arg = VALUE #( ( |data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,|
-                                                  && cl_web_http_utility=>encode_x_base64( lv_xlsx ) )
+                                                  && z2ui5_cl_cgui_context=>conv_encode_x_base64( lv_xlsx ) )
                                                    ( |{ lv_name }.xlsx| ) ) ).
         RETURN.
       ENDIF.
     ENDIF.
 
     " UTF-8 with a byte order mark - Excel reads the umlauts right then
-    DATA(lv_csv) = cl_abap_conv_codepage=>create_out( )->convert( to_csv( tab ) ).
+    DATA(lv_csv) = z2ui5_cl_cgui_context=>conv_get_xstring_by_string( to_csv( tab ) ).
     DATA(lv_bom) = CONV xstring( `EFBBBF` ).
     CONCATENATE lv_bom lv_csv INTO lv_csv IN BYTE MODE.
 
     client->follow_up_action( val   = client->cs_event-download_b64_file
-                              t_arg = VALUE #( ( |data:text/csv;charset=utf-8;base64,{ cl_web_http_utility=>encode_x_base64( lv_csv ) }| )
+                              t_arg = VALUE #( ( |data:text/csv;charset=utf-8;base64,{ z2ui5_cl_cgui_context=>conv_encode_x_base64( lv_csv ) }| )
                                                ( |{ lv_name }.csv| ) ) ).
 
   ENDMETHOD.

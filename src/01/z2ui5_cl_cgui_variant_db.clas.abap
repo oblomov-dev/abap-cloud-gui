@@ -33,7 +33,9 @@ CLASS z2ui5_cl_cgui_variant_db IMPLEMENTATION.
 
   METHOD user.
 
-    result = cl_abap_context_info=>get_user_technical_name( ).
+    " sy-uname - as abap2UI5 keeps the owner of a draft; on ABAP Cloud the
+    " technical name of the user
+    result = sy-uname.
 
   ENDMETHOD.
 
@@ -47,7 +49,7 @@ CLASS z2ui5_cl_cgui_variant_db IMPLEMENTATION.
 
     DATA ls_variant TYPE z2ui5_cl_cgui_variant=>ty_s_variant.
 
-    DATA(lv_report) = CONV seoclsname( to_upper( report ) ).
+    DATA(lv_report) = CONV z2ui5_cgui_var-report( to_upper( report ) ).
     DATA(lv_user) = CONV z2ui5_cgui_var_owner( user( ) ).
 
     SELECT variant, owner, shared, protected, data
@@ -121,7 +123,7 @@ CLASS z2ui5_cl_cgui_variant_db IMPLEMENTATION.
 
   METHOD z2ui5_if_cgui_variant_store~delete.
 
-    DATA(lv_report) = CONV seoclsname( to_upper( report ) ).
+    DATA(lv_report) = CONV z2ui5_cgui_var-report( to_upper( report ) ).
     DATA(lv_name) = CONV z2ui5_cgui_var_name( name ).
 
     SELECT SINGLE owner, protected

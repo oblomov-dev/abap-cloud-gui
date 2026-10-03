@@ -204,7 +204,11 @@ CLASS ltcl_test IMPLEMENTATION.
 
     " SUBMIT of the flight report
     event( `REPORT` ).
-    cl_abap_unit_assert=>assert_true( xsdbool( mo_client->mo_called IS INSTANCE OF z2ui5_cl_cgui_sample_05 ) ).
+    TRY.
+        cl_abap_unit_assert=>assert_bound( CAST z2ui5_cl_cgui_sample_05( mo_client->mo_called ) ).
+      CATCH cx_sy_move_cast_error.
+        cl_abap_unit_assert=>fail( `not a z2ui5_cl_cgui_sample_05` ).
+    ENDTRY.
 
   ENDMETHOD.
 

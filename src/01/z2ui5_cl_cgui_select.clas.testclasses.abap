@@ -78,7 +78,7 @@ CLASS ltcl_test DEFINITION FINAL FOR TESTING
   PRIVATE SECTION.
     TYPES:
       BEGIN OF ty_s_row,
-        carrid TYPE s_carr_id,
+        carrid TYPE land1,
         text   TYPE string,
         fldate TYPE d,
       END OF ty_s_row.

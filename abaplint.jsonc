@@ -63,12 +63,15 @@
     "line_length": {
       "length": 255
     },
+    // classes, the interface of the variant store and the packages - no
+    // programs, no dictionary objects: everything is ABAP Cloud ready
     "allowed_object_types": {
-      "allowed": ["CLAS", "DEVC"]
+      "allowed": ["CLAS", "INTF", "DEVC", "TABL", "DTEL"]
     },
     "allowed_object_naming": true,
     "object_naming": {
       "clas": "^Z2UI5_C[LX]_CGUI_",
+      "intf": "^Z2UI5_IF_CGUI_",
       "patternKind": "required",
       "ignoreNames": [],
       "ignorePatterns": []

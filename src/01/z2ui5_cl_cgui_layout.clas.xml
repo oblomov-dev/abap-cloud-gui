@@ -127,6 +127,18 @@
      <ENTRY>Cancel</ENTRY>
      <LENGTH>20</LENGTH>
     </item>
+    <item>
+     <ID>I</ID>
+     <KEY>020</KEY>
+     <ENTRY>Shared</ENTRY>
+     <LENGTH>20</LENGTH>
+    </item>
+    <item>
+     <ID>I</ID>
+     <KEY>021</KEY>
+     <ENTRY>Protected</ENTRY>
+     <LENGTH>20</LENGTH>
+    </item>
    </TPOOL>
   </asx:values>
  </asx:abap>

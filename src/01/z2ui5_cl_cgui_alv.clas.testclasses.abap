@@ -728,10 +728,35 @@ CLASS ltcl_test IMPLEMENTATION.
         price  TYPE p LENGTH 8 DECIMALS 2,
         sel    TYPE c LENGTH 1,
       END OF ty_s_flight.
+    " LVC_T_FCAT, LVC_S_LAYO and LVC_T_SORT with the fields used here - the
+    " ALV reads them by name, and ABAP Cloud has no LVC types
+    TYPES:
+      BEGIN OF ty_s_fcat,
+        fieldname TYPE c LENGTH 30,
+        scrtext_l TYPE c LENGTH 40,
+        scrtext_m TYPE c LENGTH 20,
+        coltext   TYPE c LENGTH 40,
+        key       TYPE c LENGTH 1,
+        do_sum    TYPE c LENGTH 1,
+        outputlen TYPE n LENGTH 6,
+        tech      TYPE c LENGTH 1,
+      END OF ty_s_fcat.
+    TYPES:
+      BEGIN OF ty_s_layo,
+        zebra      TYPE c LENGTH 1,
+        cwidth_opt TYPE c LENGTH 1,
+        box_fname  TYPE c LENGTH 30,
+        grid_title TYPE c LENGTH 70,
+      END OF ty_s_layo.
+    TYPES:
+      BEGIN OF ty_s_sort,
+        fieldname TYPE c LENGTH 30,
+        down      TYPE c LENGTH 1,
+      END OF ty_s_sort.
     DATA lt_flight TYPE STANDARD TABLE OF ty_s_flight WITH EMPTY KEY.
-    DATA lt_fcat   TYPE lvc_t_fcat.
-    DATA ls_layout TYPE lvc_s_layo.
-    DATA lt_sort   TYPE lvc_t_sort.
+    DATA lt_fcat   TYPE STANDARD TABLE OF ty_s_fcat WITH EMPTY KEY.
+    DATA ls_layout TYPE ty_s_layo.
+    DATA lt_sort   TYPE STANDARD TABLE OF ty_s_sort WITH EMPTY KEY.
 
     lt_flight = VALUE #( ( carrid = `LH` seats = 10 price = `100.00` )
                          ( carrid = `AA` seats = 20 price = `300.00` ) ).

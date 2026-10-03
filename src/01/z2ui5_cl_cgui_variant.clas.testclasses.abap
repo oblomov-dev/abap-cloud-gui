@@ -185,7 +185,7 @@ CLASS ltcl_test IMPLEMENTATION.
                             dynamic = `MONTH_START` dynamic_high = `MONTH_END` ) ) ).
 
     cl_abap_unit_assert=>assert_equals( act = lo_app->p_date
-                                        exp = cl_abap_context_info=>get_system_date( ) ).
+                                        exp = sy-datum ).
     cl_abap_unit_assert=>assert_equals( act = lo_app->s_date[ 1 ]-low
                                         exp = z2ui5_cl_cgui_variant=>dynamic_date( `MONTH_START` ) ).
     cl_abap_unit_assert=>assert_equals( act = lo_app->s_date[ 1 ]-high
