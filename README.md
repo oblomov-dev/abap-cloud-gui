@@ -199,21 +199,21 @@ METHOD initialization.
 ENDMETHOD.
 ```
 
-By default the variants are kept in the browser's local storage, one entry
-per report class — nothing to set up, on ABAP Cloud as on premise; they
-belong to the browser then, another device starts without them. On the
-server they are kept in table `Z2UI5_CGUI_VAR` - shared with all users,
-protected against changes of others, one owner each:
+The variants are kept in table `Z2UI5_CGUI_VAR`
+(`z2ui5_cl_cgui_variant_db`), one namespace per report class — nothing to
+set up, on ABAP Cloud as on premise: shared with all users, protected against
+changes of others, one owner each. A store of your own - another table, a
+RAP business object - implements `z2ui5_if_cgui_variant_store` (load, save,
+delete, check_sharing) and is set with `set_variant_store( store )` in
+`initialization( )`. `set_variant_store( )` without a store keeps the
+variants in the browser's local storage instead - per browser and device,
+another device starts without them:
 
 ```abap
 METHOD initialization.
-  set_variant_store( z2ui5_cl_cgui_variant_db=>factory( ) ).
+  set_variant_store( ).   " the browser's local storage, no table
 ENDMETHOD.
 ```
-
-A store of your own - another table, a RAP business object - implements
-`z2ui5_if_cgui_variant_store` (load, save, delete, check_sharing) and is set
-the same way.
 
 ### ALV layouts
 
@@ -291,8 +291,6 @@ Known limitations:
   `I CP` — use `z2ui5_cl_cgui_context=>range_check( )` for internal tables if
   the report must also run there. On an SAP system `IN` and
   `SELECT ... WHERE ... IN` work as usual.
-- Without `set_variant_store( )` the selection variants live in the
-  browser's local storage — per browser and device.
 - `WRITE ... CURRENCY` takes the decimals of the currency from ISO 4217,
   `UNIT` formats the number as it is — `TCURX` and `T006` are not released on
   ABAP Cloud. Print is a text file, not a spool request.

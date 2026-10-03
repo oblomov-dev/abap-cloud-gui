@@ -74,8 +74,6 @@ CLASS z2ui5_cl_cgui_sample_08 IMPLEMENTATION.
   METHOD initialization.
 
     set_title( `abap-cloud-gui - Flight Cockpit` ).
-    " the variants on the server: shared and protected ones, dynamic dates
-    set_variant_store( z2ui5_cl_cgui_variant_db=>factory( ) ).
     vrm_set_values(
  name   = `P_CLASS`
                     values = VALUE #( ( key = `Y` text = `Economy` )

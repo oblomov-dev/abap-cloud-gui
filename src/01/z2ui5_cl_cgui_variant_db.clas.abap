@@ -1,9 +1,8 @@
 "! Selection variants on the server - kept in table Z2UI5_CGUI_VAR, one
 "! namespace per report as in the classic variant maintenance. A variant
 "! belongs to the user who saved it first; shared it is seen by every user,
-"! protected only its owner changes or deletes it. Set it in
-"! initialization( ):
-"!   set_variant_store( z2ui5_cl_cgui_variant_db=>factory( ) ).
+"! protected only its owner changes or deletes it. The default store of
+"! every report - set_variant_store( ) in initialization( ) names another.
 CLASS z2ui5_cl_cgui_variant_db DEFINITION PUBLIC FINAL CREATE PRIVATE.
 
   PUBLIC SECTION.

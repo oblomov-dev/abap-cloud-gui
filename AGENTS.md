@@ -108,11 +108,12 @@ static gates.
   to `selected` - so a table that brings a `ZZSELKZ` comes up checked. The
   popup heads a column with the DDIC label of its type, and with `STRING`
   for a string: give value lists character types.
-- **Variants live in the browser's local storage by default** - the server
-  store `z2ui5_cl_cgui_variant_db` (table `Z2UI5_CGUI_VAR`: shared and
-  protected variants, one owner each) is set with `set_variant_store( )`, and a
-  customer plugs in a store of his own through `z2ui5_if_cgui_variant_store`.
-  For the browser's storage, the invisible `z2ui5:Storage` control reads the catalog
+- **Variants live in table `Z2UI5_CGUI_VAR` by default**
+  (`z2ui5_cl_cgui_variant_db`: shared and protected variants, one owner each,
+  set after `initialization( )` unless it chose otherwise);
+  `set_variant_store( store )` plugs in another `z2ui5_if_cgui_variant_store`,
+  `set_variant_store( )` without one keeps them in the browser's local
+  storage. For the browser's storage, the invisible `z2ui5:Storage` control reads the catalog
   into the PUBLIC `mv_cgui_variants` and fires `finished` while the first
   view still renders - the wire needs `check_queue_last`, or the event is
   dropped. `STORE_DATA` is called from a handler with a payload composed as

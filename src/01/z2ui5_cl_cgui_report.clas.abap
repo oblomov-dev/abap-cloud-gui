@@ -29,8 +29,9 @@
 "!                         authorization, no report
 "! The runtime shows the selection screen, runs the blocks on Execute (F8),
 "! shows the output and goes back on Back (F3). The values of the selection
-"! screen can be saved as variants, kept in the browser's local storage per
-"! report or in a store of your own (set_variant_store( )) - start with one by
+"! screen can be saved as variants, kept in table Z2UI5_CGUI_VAR per report,
+"! in a store of your own or in the browser's local storage
+"! (set_variant_store( )) - start with one by
 "! set_variant( ) in initialization( ) or with the URL parameter
 "! variant=NAME. The fields can be filled from the URL as well
 "! (&P_CARRID=LH&S_DATE=20260101..20260331&skip_screen=X), and submit( )
@@ -622,11 +623,12 @@ CLASS z2ui5_cl_cgui_report DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
       IMPORTING
         name TYPE clike.
 
-    "! keep the variants in store instead of the browser's local storage -
-    "! set it in initialization( )
+    "! keep the selection variants in store instead of table Z2UI5_CGUI_VAR
+    "! (z2ui5_cl_cgui_variant_db, the default) - set it in initialization( ).
+    "! Without a store the variants are kept in the browser's local storage
     METHODS set_variant_store
       IMPORTING
-        store TYPE REF TO z2ui5_if_cgui_variant_store.
+        store TYPE REF TO z2ui5_if_cgui_variant_store OPTIONAL.
 
     "! keep the ALV layouts in store instead of table Z2UI5_CGUI_LAY
     "! (z2ui5_cl_cgui_layout_db, the default) - set it in initialization( ).
@@ -682,7 +684,11 @@ CLASS z2ui5_cl_cgui_report DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
     DATA mv_cgui_variant       TYPE string.
     DATA mv_cgui_variant_start TYPE string.
     DATA mv_cgui_variant_url   TYPE abap_bool.
+    " the store of the selection variants - z2ui5_cl_cgui_variant_db unless
+    " set_variant_store( ) named another one or none (mv_cgui_store_none:
+    " the browser's local storage)
     DATA mo_cgui_store         TYPE REF TO z2ui5_if_cgui_variant_store.
+    DATA mv_cgui_store_none    TYPE abap_bool.
     " the store of the ALV layouts - z2ui5_cl_cgui_layout_db unless
     " set_layout_store( ) named another one or none (mv_cgui_lay_none)
     DATA mo_cgui_lay_store     TYPE REF TO z2ui5_if_cgui_layout_store.
@@ -1226,6 +1232,12 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
     IF mt_cgui_submit IS NOT INITIAL.
       z2ui5_cl_cgui_variant=>values_set( app    = me
                                          values = mt_cgui_submit ).
+    ENDIF.
+
+    " the default store is the table, unless initialization( ) chose another
+    " one or the browser's local storage
+    IF mo_cgui_store IS NOT BOUND AND mv_cgui_store_none = abap_false.
+      mo_cgui_store = z2ui5_cl_cgui_variant_db=>factory( ).
     ENDIF.
 
     " a server store reads the variants now, the browser once it rendered
@@ -2941,6 +2953,7 @@ CLASS z2ui5_cl_cgui_report IMPLEMENTATION.
   METHOD set_variant_store.
 
     mo_cgui_store = store.
+    mv_cgui_store_none = xsdbool( store IS NOT BOUND ).
 
   ENDMETHOD.
 
