@@ -45,9 +45,8 @@ jobs:
     timeout-minutes: 20
     env:
       # the app client (lib/appclient.mjs, with the selection-dialog pick and
-      # the message-popover items of its snapshot) is on this branch of mcp-server
-      # until it is released - move to main then
-      MCP_SERVER_REF: claude/abap2ui5-project-brainstorm-nt7ifs
+      # the message-popover items of its snapshot), merged in mcp-server#42
+      MCP_SERVER_REF: main
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
