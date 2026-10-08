@@ -1,11 +1,24 @@
 # abap-cloud-gui
 
+[![abap2UI5-addons](https://img.shields.io/badge/abap2UI5--addons-library-1873b4)](https://github.com/abap2UI5-addons)
+[![ABAP](https://img.shields.io/badge/ABAP-Cloud%20%7C%20Standard%20%E2%89%A5%207.50%20%7C%207.02-blue)](#installation)
+[![abap2UI5](https://img.shields.io/badge/requires-abap2UI5-blue)](https://github.com/abap2UI5/abap2UI5)
+[![popups](https://img.shields.io/badge/requires-popups-blue)](https://github.com/abap2UI5-addons/popups)
+[![License](https://img.shields.io/github/license/abap2UI5-addons/abap-cloud-gui)](LICENSE)
+<br>
+[![abaplint](https://img.shields.io/github/actions/workflow/status/abap2UI5-addons/abap-cloud-gui/abaplint.yaml?branch=main&label=abaplint)](https://github.com/abap2UI5-addons/abap-cloud-gui/actions/workflows/abaplint.yaml)
+[![ABAP Unit](https://img.shields.io/github/actions/workflow/status/abap2UI5-addons/abap-cloud-gui/unit.yaml?branch=main&label=ABAP%20Unit)](https://github.com/abap2UI5-addons/abap-cloud-gui/actions/workflows/unit.yaml)
+[![check-abap2UI5](https://img.shields.io/github/actions/workflow/status/abap2UI5-addons/abap-cloud-gui/check-abap2ui5.yaml?branch=main&label=check-abap2UI5)](https://github.com/abap2UI5-addons/abap-cloud-gui/actions/workflows/check-abap2ui5.yaml)
+[![report2cloud](https://img.shields.io/github/actions/workflow/status/abap2UI5-addons/abap-cloud-gui/report2cloud.yaml?branch=main&label=report2cloud)](https://github.com/abap2UI5-addons/abap-cloud-gui/actions/workflows/report2cloud.yaml)
+
 **Write abap2UI5 apps the way you write a classic ABAP report.** Selection
 screen, `WRITE` list, ALV grid, `START-OF-SELECTION`, `AT LINE-SELECTION`,
-`MESSAGE` — the same concepts, running as a UI5 app in the browser. On ABAP
+`MESSAGE` - the same concepts, running as a UI5 app in the browser. On ABAP
 Cloud as well as on NetWeaver down to 7.02.
 
-## Why?
+> Part of [abap2UI5-addons](https://github.com/abap2UI5-addons) - addons and apps for [abap2UI5](https://github.com/abap2UI5/abap2UI5), installed with [abapGit](https://abapgit.org).
+
+## Why
 
 ABAP Cloud has no SAP GUI: no selection screens, no `WRITE` lists, no
 `CL_SALV_TABLE`. A quick report that took ten minutes on premise suddenly
@@ -13,36 +26,50 @@ needs RAP, CDS and a Fiori app. And writing UI5 views by hand means learning
 a new UI model first.
 
 abap-cloud-gui closes that gap. You write a class that looks and reads like a
-report — parameters, event blocks, `write( )` — and get a UI5 app with a
+report - parameters, event blocks, `write( )` - and get a UI5 app with a
 selection screen, a result list or ALV grid, drilldown, value helps and
 messages. No UI5 knowledge, no CDS, no RAP needed.
 
 Good for:
 
 - **ABAP developers on ABAP Cloud** who need a quick report or tool.
-- **Moving reports to ABAP Cloud** — the event blocks and output statements
+- **Moving reports to ABAP Cloud** - the event blocks and output statements
   map to methods with matching names, so a report keeps its structure.
 - **Starting with abap2UI5** in familiar terms before building views yourself.
 
-## What it is not
+What it is not:
 
 - **Not a way to run existing reports unchanged.** A report is rewritten as a
   class: event blocks become methods, `PARAMETERS` become attributes, `WRITE`
-  becomes `write( )`. The structure stays, the syntax changes.
+  becomes `write( )`. The structure stays, the syntax changes -
+  [report2cloud](#converting-existing-reports-report2cloud) does most of it.
 - **Not a SAP GUI clone.** It uses the classic *programming model*, the screens
   look like modern UI5. If you are looking for SE80, SE16N or SM37 in the
   browser, that is [abap2UI5-addons/sapgui](https://github.com/abap2UI5-addons/sapgui).
 
-## Quick start
+## Installation
 
-Install with [abapGit](https://abapgit.org), in this order:
+**Requirements**
+
+- ABAP Cloud (BTP ABAP Environment, S/4HANA Cloud) or Standard ABAP 7.50 or
+  higher; NetWeaver 7.02 with a downported copy (see [Compatibility](#compatibility))
+- [abap2UI5](https://github.com/abap2UI5/abap2UI5)
+- [abap2UI5-addons/popups](https://github.com/abap2UI5-addons/popups) - the
+  value helps and confirmation popups
+
+**Steps** - with [abapGit](https://abapgit.org), in this order:
 
 1. [abap2UI5](https://github.com/abap2UI5/abap2UI5)
-2. [abap2UI5-addons/popups](https://github.com/abap2UI5-addons/popups) — the
-   value helps and confirmation popups
-3. this repository
+2. [abap2UI5-addons/popups](https://github.com/abap2UI5-addons/popups)
+3. this repository (branch `main`) - classes, two interfaces and the two
+   tables `Z2UI5_CGUI_VAR` / `Z2UI5_CGUI_LAY`; nothing else to set up
 
-Then write your first report:
+**Start** - run a sample like any abap2UI5 app, e.g.
+`?app_start=z2ui5_cl_cgui_sample_05` for a complete report.
+
+## Quick start
+
+Write your first report:
 
 ```abap
 CLASS zcl_hello DEFINITION PUBLIC INHERITING FROM z2ui5_cl_cgui_report FINAL CREATE PUBLIC.
@@ -408,3 +435,12 @@ The ABAP Unit tests run in CI in the transpiled abap2UI5 backend
 (`.github/workflows/unit.yaml`, `scripts/unit.mjs` with
 [abap2UI5/mcp-server](https://github.com/abap2UI5/mcp-server) as a library),
 the tables of the two stores in SQLite.
+
+## Contributing
+
+Issues and pull requests are welcome. Read [AGENTS.md](AGENTS.md) first - it
+holds the layout, the release targets and the rules of this repository.
+
+## License
+
+MIT - see [LICENSE](LICENSE).
